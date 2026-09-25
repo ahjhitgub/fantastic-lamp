@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CEW / CBEP Tracker</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div id="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="name">CEW / CBEP Tracker</div>
+      <div class="sub">CalRecycle claim records</div>
+    </div>
+    <div id="sidebar-nav"></div>
+  </nav>
+
+  <header class="topbar">
+    <div class="period-switcher">
+      <label for="period-select">Active period</label>
+      <select id="period-select"></select>
+    </div>
+    <a href="#/claimPeriods" class="muted" style="font-size:12px;">Manage periods →</a>
+  </header>
+
+  <main id="main-content"></main>
+</div>
+
+<!-- Core (no dependencies) -->
+<script src="js/models.js" defer></script>
+<script src="js/db.js" defer></script>
+<script src="js/backup.js" defer></script>
+<script src="js/attachments.js" defer></script>
+<script src="js/periods.js" defer></script>
+
+<!-- Pages (each attaches to App.Pages, depends on core above) -->
+<script src="js/pages/dashboard.js" defer></script>
+<script src="js/pages/claimPeriods.js" defer></script>
+<script src="js/pages/transfers.js" defer></script>
+<script src="js/pages/cancellations.js" defer></script>
+<script src="js/pages/residuals.js" defer></script>
+<script src="js/pages/disposition.js" defer></script>
+<script src="js/pages/reports.js" defer></script>
+<script src="js/pages/settings.js" defer></script>
+
+<!-- Shell/router: boots everything above on DOMContentLoaded -->
+<script src="js/app.js" defer></script>
+
+</body>
+</html>

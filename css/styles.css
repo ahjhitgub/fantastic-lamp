@@ -1,0 +1,384 @@
+/* ---------------------------------------------------------------------
+   Design tokens
+   A dense, industrial record-keeping tool, not a marketing page: quiet
+   slate/paper surfaces, one working accent (teal), a separate flag color
+   reserved only for discrepancies. Numeric data sets in a monospace
+   stack so weights and dates line up in columns. System fonts only —
+   the app has to work with zero network access.
+------------------------------------------------------------------------ */
+:root {
+  --ink: #1b2430;
+  --ink-soft: #4b5563;
+  --muted: #6b6459;
+  --paper: #f7f6f3;
+  --surface: #ffffff;
+  --line: #d9d5cc;
+  --line-strong: #b7b2a6;
+  --accent: #2a6f6f;
+  --accent-ink: #ffffff;
+  --accent-soft: #e4efee;
+  --flag: #b5541c;
+  --flag-soft: #f6e6db;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-data: ui-monospace, SFMono-Regular, "Roboto Mono", "Consolas", "Liberation Mono", monospace;
+
+  --radius: 3px;
+  --sidebar-w: 220px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+a { color: var(--accent); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---------------------------------------------------------------------
+   Shell layout
+------------------------------------------------------------------------ */
+#app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "sidebar topbar"
+    "sidebar main";
+  min-height: 100vh;
+}
+
+.sidebar {
+  grid-area: sidebar;
+  background: var(--ink);
+  color: #cfd6dc;
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-brand {
+  padding: 0 20px 18px;
+  border-bottom: 1px solid #2c3644;
+  margin-bottom: 12px;
+}
+
+.sidebar-brand .name {
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+
+.sidebar-brand .sub {
+  font-size: 11.5px;
+  color: #8b95a1;
+  margin-top: 2px;
+}
+
+.nav-group-label {
+  font-size: 11px;
+  color: #6b7684;
+  padding: 14px 20px 6px;
+}
+
+.nav-link {
+  display: block;
+  padding: 8px 20px;
+  color: #cfd6dc;
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+
+.nav-link:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.nav-link.active {
+  background: rgba(255, 255, 255, 0.08);
+  border-left-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.nav-link .tag {
+  float: right;
+  font-size: 10.5px;
+  color: #8b95a1;
+}
+
+.topbar {
+  grid-area: topbar;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.period-switcher {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.period-switcher label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.period-switcher select {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  background: var(--surface);
+  min-width: 260px;
+}
+
+main {
+  grid-area: main;
+  padding: 24px 28px 60px;
+  max-width: 1080px;
+}
+
+/* ---------------------------------------------------------------------
+   Page furniture
+------------------------------------------------------------------------ */
+.page-header {
+  margin-bottom: 18px;
+}
+
+.page-header h1 {
+  font-size: 20px;
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+
+.page-header p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 65ch;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+
+.panel h2 {
+  font-size: 14px;
+  margin: 0 0 12px;
+  text-transform: none;
+}
+
+.stat-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  min-width: 150px;
+}
+
+.stat .value {
+  font-family: var(--font-data);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.stat .label {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* ---------------------------------------------------------------------
+   Tables
+------------------------------------------------------------------------ */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th, td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+td.num, th.num {
+  font-family: var(--font-data);
+  text-align: right;
+  white-space: nowrap;
+}
+
+tbody tr:hover {
+  background: var(--paper);
+}
+
+/* ---------------------------------------------------------------------
+   Forms
+------------------------------------------------------------------------ */
+.field {
+  margin-bottom: 14px;
+}
+
+.field label {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.field textarea { resize: vertical; }
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+/* ---------------------------------------------------------------------
+   Buttons, badges
+------------------------------------------------------------------------ */
+button {
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--ink-soft); }
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+button.primary:hover { background: #245e5e; }
+
+button.danger {
+  color: var(--flag);
+  border-color: var(--flag);
+  background: var(--flag-soft);
+}
+
+button.ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 100px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.badge.flag {
+  background: var(--flag-soft);
+  color: var(--flag);
+}
+
+/* ---------------------------------------------------------------------
+   Empty / placeholder states
+------------------------------------------------------------------------ */
+.empty-state {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.empty-state h3 {
+  color: var(--ink);
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.coming-next {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  padding: 24px;
+  color: var(--ink-soft);
+}
+
+.coming-next ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+/* ---------------------------------------------------------------------
+   Utility
+------------------------------------------------------------------------ */
+.row { display: flex; align-items: center; gap: 10px; }
+.row.spread { justify-content: space-between; }
+.muted { color: var(--muted); }
+.mt-0 { margin-top: 0; }
+.hidden { display: none !important; }
+
+@media (max-width: 760px) {
+  #app-shell {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "topbar"
+      "main";
+  }
+  .sidebar { display: none; }
+}
