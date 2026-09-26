@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CEW / CBEP Tracker</title>
+<link rel="stylesheet" href="css/styles.css?v=20260926c">
+</head>
+<body>
+
+<div id="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="name">CEW / CBEP Tracker</div>
+      <div class="sub">CalRecycle claim records</div>
+    </div>
+    <div id="sidebar-nav"></div>
+  </nav>
+
+  <header class="topbar">
+    <div class="period-switcher">
+      <label for="period-select">Active period</label>
+      <select id="period-select"></select>
+    </div>
+    <a href="#/claimPeriods" class="muted" style="font-size:12px;">Manage periods →</a>
+  </header>
+
+  <main id="main-content"></main>
+</div>
+
+<!-- Core (no dependencies) -->
+<script src="js/models.js?v=20260926c" defer></script>
+<script src="js/logic.js?v=20260926c" defer></script>
+<script src="js/ui.js?v=20260926c" defer></script>
+<script src="js/db.js?v=20260926c" defer></script>
+<script src="js/backup.js?v=20260926c" defer></script>
+<script src="js/attachments.js?v=20260926c" defer></script>
+<script src="js/periods.js?v=20260926c" defer></script>
+<script src="js/store.js?v=20260926c" defer></script>
+<script src="js/pages/dashboard.js?v=20260926c" defer></script>
+<script src="js/pages/claimPeriods.js?v=20260926c" defer></script>
+<script src="js/pages/wcs.js?v=20260926c" defer></script>
+<script src="js/pages/wc.js?v=20260926c" defer></script>
+<script src="js/pages/doc.js?v=20260926c" defer></script>
+<script src="js/pages/transfers.js?v=20260926c" defer></script>
+<script src="js/pages/cancellations.js?v=20260926c" defer></script>
+<script src="js/pages/audit.js?v=20260926c" defer></script>
+<script src="js/pages/residuals.js?v=20260926c" defer></script>
+<script src="js/pages/disposition.js?v=20260926c" defer></script>
+<script src="js/pages/reports.js?v=20260926c" defer></script>
+<script src="js/pages/companies.js?v=20260926c" defer></script>
+<script src="js/pages/prices.js?v=20260926c" defer></script>
+<script src="js/pages/settings.js?v=20260926c" defer></script>
+<script src="js/app.js?v=20260926c" defer></script>
+
+</body>
+</html>
