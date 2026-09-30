@@ -83,6 +83,11 @@ App.Pages.claimPeriods = (function () {
           </select>
         </div>
       </div>
+      <div class="field-row">
+        <div class="field"><label>Payment requested $ <span class="muted">(the claim)</span></label><input name="requestedAmount" type="text" inputmode="decimal" value="${p.requestedAmount ?? ''}"></div>
+        <div class="field"><label>Payment received $ <span class="muted">(from CalRecycle)</span></label><input name="receivedAmount" type="text" inputmode="decimal" value="${p.receivedAmount ?? ''}"></div>
+        <div class="field"><label>Date received</label><input name="paidDate" type="date" value="${p.paidDate || ''}"></div>
+      </div>
       <div class="field">
         <label>Notes</label>
         <textarea name="notes" rows="2">${p.notes || ''}</textarea>
@@ -123,6 +128,9 @@ App.Pages.claimPeriods = (function () {
         status: fd.get('status'),
         previousPeriodId: fd.get('previousPeriodId') ? Number(fd.get('previousPeriodId')) : null,
         notes: fd.get('notes') || '',
+        requestedAmount: String(fd.get('requestedAmount') || '').trim(),
+        receivedAmount: String(fd.get('receivedAmount') || '').trim(),
+        paidDate: fd.get('paidDate') || '',
       };
       try {
         if (isEdit) {

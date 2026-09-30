@@ -17,6 +17,12 @@ App.Pages.wc = (function () {
   const L = () => App.Logic;
   const setFlash = (text, kind) => { flash = { text, kind }; };
   /** Scale person = one of the authorized WC signers from Settings (no default). */
+  /** Who may sign the CalRecycle 197 — its own list in Settings, separate from the WC signers. */
+  const signerOptions197 = (data, current) => {
+    const list = [...(data.profile.form197Signers || [])];
+    if (current && !list.includes(current)) list.push(current);
+    return U().options(list.map((n) => ({ value: n, label: n })), current, list.length ? '— choose a signer —' : '(add authorized 197 signers in Settings)');
+  };
   const signerOptions = (data, current) => {
     const list = [...(data.profile.wcSigners || [])];
     if (current && !list.includes(current)) list.push(current);
@@ -181,7 +187,9 @@ App.Pages.wc = (function () {
             : `<select data-f="collectorId">${pick('collector', t.collectorId)}</select>`}</div>
           <div class="field"><label>Recycler</label><div class="readonly">${us}</div></div>
           <div class="field"><label>Material was</label><select data-f="mode">${options([{ value: 'dropoff', label: 'Dropped off' }, { value: 'pickup', label: 'Picked up' }], t.mode, '— choose —')}</select></div>
+          <div class="field"><label>Transfer type</label><select data-tt="transferType">${options(L().TRANSFER_TYPES.map(([value, label]) => ({ value, label })), t.transferType || 'cew')}</select></div>
         </div>
+        <div data-role="type-issues"></div>
         ${P.collectorIsFacility && !P.dualEntity ? `<div class="notice warning">We're listed as the collector because a handler is selected, but our facility isn't marked as a dual entity in <a href="#/settings">Settings</a>.</div>` : ''}
         ${c && c.accountStatus === 'closed' ? `<div class="notice warning">${esc(c.name)}'s account is closed.</div>` : ''}
         ${c ? `<p class="hint"><strong>${esc(c.name)}</strong>${info.length ? ` — ${info.join(' · ')}` : ''} · <a href="#/companies" data-a="edit-customer">edit customer</a></p>` : ''}
@@ -216,6 +224,11 @@ App.Pages.wc = (function () {
     el.querySelector('[data-f="activityNotes"]').addEventListener('input', (e) => { t.activityNotes = e.target.value; bar.markDirty(); });
     const editLink = el.querySelector('[data-a="edit-customer"]');
     if (editLink) editLink.addEventListener('click', (e) => { e.preventDefault(); App.Pages.companies.edit(c.id); });
+    const typeSel = el.querySelector('[data-tt="transferType"]');
+    const typeIssues = el.querySelector('[data-role="type-issues"]');
+    const showTypeIssues = () => typeIssues.replaceChildren(...L().transferTypeIssues(t).map((x) => U().notice(x, 'warning')));
+    typeSel.addEventListener('change', () => { t.transferType = typeSel.value; bar.markDirty(); showTypeIssues(); });
+    showTypeIssues();
     return el;
   }
 
@@ -229,12 +242,19 @@ App.Pages.wc = (function () {
     const byNames = [...new Set(data.wcs.filter((w) => w.kind === 'transfer' && w.transfer && w.transfer.irrBy).map((w) => w.transfer.irrBy))];
     const nextIrr = L().nextIrrNumber(data.wcs.filter((w) => w.id !== draftId));
     const plates = App.Store.plateChoices({ direction: 'in', mode: t.mode, company: App.Store.transferParties(draft, data).customer, profile: data.profile });
-    const catOptions = (sel) => L().CATEGORIES.map((c) => `<option value="${c.key}" ${c.key === sel ? 'selected' : ''}>${esc(c.label)}</option>`).join('');
+    // CBEP is listed by item (CBEP Computer Towers, CBEP Printers, …) — each is bought at its own rate
+    const cbepItems = L().cbepItems(data.priceItems);
+    const catOptions = (line) => L().CATEGORIES.map((c) => {
+      if (c.key !== 'cbep' || !cbepItems.length) return `<option value="${c.key}" ${c.key === line.category ? 'selected' : ''}>${esc(c.label)}</option>`;
+      const picked = line.category === 'cbep' ? L().cbepItemFor(line, data.priceItems) : null;
+      const ask = line.category === 'cbep' && !picked ? '<option value="cbep" selected>CBEP — pick which</option>' : '';
+      return ask + cbepItems.map((p) => `<option value="cbep:${p.id}" ${picked && picked.id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+    }).join('');
     const rows = t.lines.map((line, i) => {
       const cew = L().category(line.category).cew;
       return `
         <tr data-i="${i}">
-          <td><select data-f="category">${catOptions(line.category)}</select>
+          <td><select data-f="category">${catOptions(line)}</select>
               <input data-f="description" class="desc" ${cew ? '' : 'list="other-items"'} placeholder="${cew ? 'description (optional)' : 'description — printed on the IRR, WC and invoice'}" value="${esc(line.description)}"></td>
           <td><input data-f="irrUnits" type="text" inputmode="decimal" step="1" min="0" value="${esc(line.irrUnits)}" placeholder="${cew ? '' : 'Wt.Only'}"></td>
           <td><input data-f="irrGross" type="text" inputmode="decimal" step="0.01" min="0" value="${esc(line.irrGross)}"></td>
@@ -302,8 +322,8 @@ App.Pages.wc = (function () {
         if (!L().category(l.category).cew && (L().num(l.irrUnits) || L().num(l.irrWeight)) && !String(l.description || '').trim()) extra.push(`Line ${i + 1}: give this Other (non-CEW) item a description — it's printed on the IRR, WC and purchase invoice`);
         if (L().num(l.irrTare) > L().num(l.irrGross)) extra.push(`Line ${i + 1}: tare is more than gross`);
       });
-      problemsEl.replaceChildren(...math.problems.concat(extra).map((p) => U().notice(p, 'warning')));
-      const wcRows = L().documentRows(t);
+      problemsEl.replaceChildren(...math.problems.concat(extra, L().transferTypeIssues(t)).map((p) => U().notice(p, 'warning')));
+      const wcRows = L().documentRows(t, data.priceItems);
       previewEl.replaceChildren(wcRows.length
         ? U().h(`<table><thead><tr><th>Description</th><th class="num">Units</th><th class="num">Lbs</th></tr></thead><tbody>${
           wcRows.map((r) => `<tr><td>${esc(r.label)}</td><td class="num">${r.part === 'other' && !r.units ? 'Wt.Only' : fmt(r.units)}</td><td class="num">${fmt(r.weight)}</td></tr>`).join('')}</tbody></table>`)
@@ -318,6 +338,12 @@ App.Pages.wc = (function () {
         const f = input.dataset.f;
         input.addEventListener(f === 'category' ? 'change' : 'input', () => {
           line[f] = input.value;
+          if (f === 'category') {
+            const m = /^cbep:(\d+)$/.exec(input.value);
+            if (m) { line.category = 'cbep'; line.priceItemId = Number(m[1]); }
+            else if (input.value === 'cbep') line.category = 'cbep';
+            else if (line.category !== 'other') line.priceItemId = null; // a CBEP item doesn't carry over to LCD/LED, CRT or plasma
+          }
           if (f === 'irrGross' || f === 'irrTare') {
             line.irrWeight = line.irrGross === '' && line.irrTare === '' ? '' : String(L().r2(L().num(line.irrGross) - L().num(line.irrTare)));
           }
@@ -593,7 +619,7 @@ App.Pages.wc = (function () {
         <div class="field-row">
           <div class="field"><label>PO #</label><div class="readonly">${esc(draft.wcNumber)} <span class="muted">(same as the WC #)</span></div></div>
           <div class="field"><label>PO date <span class="muted">(blank = the "PO sent" date, else today)</span></label><input type="date" data-p="poDate" value="${esc(t.poDate)}"></div>
-          <div class="field" style="flex:2"><label>Circumstance</label><input data-p="circumstance" value="${esc(t.circumstance)}"></div>
+          <div class="field"><label>Circumstance</label><div class="readonly">${t.mode === 'pickup' ? 'Pick up' : t.mode === 'dropoff' ? 'Drop off' : '<span class="muted">set "Material was" above</span>'}</div></div>
           <div class="field"><label>Purchase invoice by</label><input data-p="invoiceBy" list="invoice-by-names" value="${esc(t.invoiceBy)}"></div>
         </div>
         <datalist id="invoice-by-names">${byNames.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
@@ -646,11 +672,174 @@ App.Pages.wc = (function () {
     return { el, refresh };
   }
 
+  // ---------------------------------------------------------------- transfer: CalRecycle 198 source logs (198 O / 198 A)
+  let logTab = 'o';
+  let logNote = null; // the result of reading a file, shown in the Source logs section
+  function buildLogs198(saved, data, bar) {
+    const { h, esc, fmt } = U();
+    const t = draft.transfer;
+    t.logs = t.logs || { o: null, a: null };
+    const basis = L().logBasis(t);
+    const count = (k) => (t.logs[k] && t.logs[k].rows ? t.logs[k].rows.length : 0);
+    const el = h(`<div class="panel logs198">
+      <div class="row spread"><h2>Source logs — CalRecycle 198</h2>
+        <div class="row">${['o', 'a'].map((k) => `<button type="button" data-tab="${k}" class="${logTab === k ? 'primary' : ''}">198 ${k.toUpperCase()}${count(k) ? ` · ${count(k)} entries` : ''}</button>`).join('')}</div></div>
+      <p class="hint mt-0">The 198 C and 198 UC are made from the <strong>198 ${basis.which}</strong> —
+        ${basis.which === 'A' ? 'customer adjustments were required (timeline).' : 'no customer adjustments on the timeline.'}
+        ${basis.missing ? `<span class="flag-text">The 198 ${basis.which} isn't entered yet.</span>` : ''}</p>
+      <div data-role="note"></div><div data-role="body"></div><div data-role="strikes"></div><div data-role="diff"></div>
+    </div>`);
+    if (logNote) { el.querySelector('[data-role="note"]').append(U().notice(logNote.text, logNote.kind)); logNote = null; }
+    // Replacing this section removes the focused input, and the browser fires its 'change' (blur) during that
+    // removal, while the old copy still counts as on the page. `gone` is set first, so the old copy's handlers stop.
+    let gone = false;
+    const redraw = () => { if (gone || !el.isConnected) return; gone = true; el.replaceWith(buildLogs198(saved, data, bar)); };
+    el.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { logTab = b.dataset.tab; redraw(); }));
+    const key = logTab; const KEY = key.toUpperCase();
+    const log = t.logs[key];
+    const body = el.querySelector('[data-role="body"]');
+    const mode = log && log.source === 'manual' ? 'manual' : 'file';
+    const hd = (log && log.header) || {};
+    body.append(h(`<div>
+      <div class="row">
+        <label class="row"><input type="radio" name="src-${key}" value="file" ${mode === 'file' ? 'checked' : ''}> Uploaded file (PDF or Excel) — read automatically</label>
+        <label class="row"><input type="radio" name="src-${key}" value="manual" ${mode === 'manual' ? 'checked' : ''}> Handwritten or scanned — typed in here</label>
+      </div>
+      ${mode === 'file' ? `<div class="row log-read"><input type="file" accept=".pdf,.xlsx,application/pdf" data-role="file"><button type="button" class="primary" data-a="read">Read the 198 ${KEY}</button>
+        ${log && log.fileName ? `<span class="muted">Read from ${esc(log.fileName)} (${esc(log.method || '')})</span>` : ''}</div>
+        <p class="hint">The file is kept with this transfer below. You can correct any entry after it's read.</p>` : `<p class="hint">Type the entries as they appear on the handwritten or scanned log, and attach the scans below.</p>`}
+      ${log ? `<div class="field-row">
+        <div class="field"><label>Collector/handler on the log</label><div class="readonly">${esc([hd.name, hd.cewid].filter(Boolean).join(' · ') || '—')}</div></div>
+        <div class="field"><label>Collection activity</label><input data-h="activity" value="${esc(hd.activity || '')}"></div>
+        <div class="field"><label>Location of collection event</label><input data-h="location" value="${esc(hd.location || '')}"></div></div>` : ''}
+      <div data-role="grid"></div>
+      <div class="row"><button type="button" data-a="add">+ Add entry</button>${log ? `<span class="spacer"></span><button type="button" class="danger" data-a="clear">Remove the 198 ${KEY} entries</button>` : ''}</div>
+      <div data-role="issues"></div>
+      <div data-role="files"></div>
+    </div>`));
+    const ensure = () => { if (!t.logs[key]) t.logs[key] = { source: mode, header: {}, rows: [], pages: [] }; return t.logs[key]; };
+    body.querySelectorAll(`input[name="src-${key}"]`).forEach((r) => r.addEventListener('change', () => { ensure().source = r.value; bar.markDirty(); redraw(); }));
+    body.querySelectorAll('[data-h]').forEach((i) => i.addEventListener('input', () => { const lg = ensure(); lg.header = { ...(lg.header || {}), [i.dataset.h]: i.value.trim() }; bar.markDirty(); }));
+    const issuesEl = body.querySelector('[data-role="issues"]');
+    const grid = body.querySelector('[data-role="grid"]');
+    const showIssues = () => {
+      const lg = t.logs[key];
+      const list = lg && lg.rows.length ? L().logIssues(lg, t) : [];
+      issuesEl.replaceChildren(...(list.length ? [h(`<ul class="issues">${list.slice(0, 40).map((x) => `<li class="${x.kind}">${esc(x.text)}</li>`).join('')}${list.length > 40 ? `<li class="info">…and ${list.length - 40} more</li>` : ''}</ul>`)]
+        : lg && lg.rows.length ? [U().notice(`The 198 ${KEY} checks out.`, 'ok')] : []));
+      const tot = lg ? L().logTotals(lg.rows) : { crt: 0, noncrt: 0, cbep: 0 };
+      const f = grid.querySelector('[data-role="tot"]'); if (f) f.textContent = `${fmt(tot.crt)} · ${fmt(tot.noncrt)} · ${fmt(tot.cbep)}`;
+    };
+    const drawGrid = () => {
+      const lg = t.logs[key];
+      if (!lg || !lg.rows.length) { grid.replaceChildren(h(`<p class="muted">No 198 ${KEY} entries yet.</p>`)); return; }
+      const typeOpts = (v) => [['', '—'], ...L().SOURCE_TYPES].map(([k, label]) => `<option value="${k}" ${L().sourceType(v) === k ? 'selected' : ''}>${k ? `${k} — ${label}` : label}</option>`).join('');
+      const tbl = h(`<div class="table-scroll"><table class="lines log-grid"><thead><tr><th>#</th><th>Date</th><th>Type</th><th>Name</th><th>Address, City, State, Zip</th><th>Contact person name & phone</th><th class="num">CRT</th><th class="num">Non-CRT</th><th class="num">CBEP</th><th></th></tr></thead>
+        <tbody>${lg.rows.map((r, i) => `<tr data-i="${i}"><td class="muted">${i + 1}</td>
+          <td><input data-c="date" value="${esc(r.date)}" style="width:92px"></td><td><select data-c="type">${typeOpts(r.type)}</select></td>
+          <td><input data-c="name" value="${esc(r.name)}"></td><td><input data-c="address" value="${esc(r.address)}" style="min-width:220px"></td><td><input data-c="contact" value="${esc(r.contact)}"></td>
+          <td><input data-c="crt" inputmode="numeric" value="${r.crt || ''}" style="width:56px"></td><td><input data-c="noncrt" inputmode="numeric" value="${r.noncrt || ''}" style="width:56px"></td><td><input data-c="cbep" inputmode="numeric" value="${r.cbep || ''}" style="width:56px"></td>
+          <td><button type="button" class="ghost" data-a="del" title="Remove this entry">✕</button></td></tr>`).join('')}</tbody>
+        <tfoot><tr><th colspan="6">Totals (CRT · Non-CRT · CBEP)</th><th colspan="3" class="num" data-role="tot"></th><th></th></tr></tfoot></table></div>`);
+      tbl.querySelectorAll('tbody tr').forEach((tr) => {
+        const r = lg.rows[Number(tr.dataset.i)];
+        tr.querySelectorAll('[data-c]').forEach((inp) => inp.addEventListener(inp.tagName === 'SELECT' ? 'change' : 'input', () => {
+          const c = inp.dataset.c;
+          r[c] = ['crt', 'noncrt', 'cbep'].includes(c) ? L().num(inp.value) : inp.value.trim();
+          bar.markDirty(); showIssues();
+        }));
+        tr.querySelector('[data-a="del"]').addEventListener('click', () => { lg.rows.splice(Number(tr.dataset.i), 1); bar.markDirty(); redraw(); });
+      });
+      grid.replaceChildren(tbl);
+    };
+    drawGrid(); showIssues();
+    body.querySelector('[data-a="add"]').addEventListener('click', () => {
+      const lg = ensure(); const last = lg.rows[lg.rows.length - 1];
+      lg.rows.push({ date: last ? last.date : '', type: last ? last.type : 'R', name: '', address: '', contact: '', crt: 0, noncrt: 0, cbep: 0 });
+      bar.markDirty(); redraw();
+    });
+    const clearBtn = body.querySelector('[data-a="clear"]');
+    if (clearBtn) clearBtn.addEventListener('click', () => { if (!window.confirm(`Remove every entry of the 198 ${KEY}? Attached files stay.`)) return; t.logs[key] = null; bar.markDirty(); redraw(); });
+    const readBtn = body.querySelector('[data-a="read"]');
+    if (readBtn) readBtn.addEventListener('click', async () => {
+      const file = body.querySelector('[data-role="file"]').files[0];
+      if (!file) { window.alert('Choose the 198 file first.'); return; }
+      readBtn.disabled = true; readBtn.textContent = 'Reading…';
+      try {
+        const res = await App.LogRead.readFile(file);
+        await App.DB.add('attachments', { linkedEntityType: `log198${key}`, linkedEntityId: saved.id, documentType: `198 ${KEY}`, filename: file.name,
+          mimeType: file.type || 'application/octet-stream', blob: file, uploadedDate: App.UI.today(), description: res.scanned ? 'scan' : `read: ${res.rows.length} entries` });
+        if (res.scanned) {
+          t.logs[key] = { ...(t.logs[key] || { rows: [], pages: [] }), source: 'manual', header: res.header || (t.logs[key] || {}).header || {} };
+          logNote = { text: `${file.name} is a scan — its text can't be read. It's attached below; type the entries in (handwritten or scanned).`, kind: 'warning' };
+        } else {
+          t.logs[key] = { source: 'file', fileName: file.name, method: res.method, header: res.header || {}, rows: res.rows.map(({ page, ...r }) => r), pages: res.pages, readAt: new Date().toISOString() };
+          logNote = { text: `Read ${res.rows.length} entries from ${file.name}. Check them, then save.`, kind: 'ok' };
+        }
+        bar.markDirty();
+      } catch (err) {
+        logNote = { text: `Couldn't read ${file.name}: ${U().errText(err)}`, kind: 'error' };
+      }
+      redraw();
+    });
+    App.Attachments.renderSection(body.querySelector('[data-role="files"]'), { linkedEntityType: `log198${key}`, linkedEntityId: saved.id });
+
+    // ---- strikes on the 198 C (from the basis log)
+    const sEl = el.querySelector('[data-role="strikes"]');
+    if (basis.log && basis.log.rows.length) {
+      const rows = basis.log.rows;
+      const sp = L().strikePlan(t, rows);
+      const plan = sp.plan.map((x) => ({ ...x }));
+      const lines = L().claimLines(rows, plan); const claimed = L().claimedTotals(lines); const uc = L().logTotals(L().ucLines(lines));
+      const st = L().strikeTotals(plan);
+      const okCrt = st.crt === sp.targets.crt; const okPl = st.noncrt === sp.targets.plasma;
+      const short = { crt: sp.targets.crt - L().logTotals(rows).crt, pl: sp.targets.plasma - L().logTotals(rows).noncrt };
+      const box = h(`<div class="strikes">
+        <h3>Struck on the 198 C <span class="muted">(from the 198 ${basis.which})</span></h3>
+        <p class="hint mt-0">Exactly this transfer's ${fmt(sp.targets.crt)} CRT and ${fmt(sp.targets.plasma)} plasma unit(s) with source logs are struck — from any entries. An entry only partly struck is split into two lines on the 198 C. ${sp.saved ? 'These are your picks.' : 'Picked automatically — change any number to choose.'}</p>
+        ${short.crt > 0 || short.pl > 0 ? U().notice(`The 198 ${basis.which} doesn't have enough ${short.crt > 0 ? 'CRT' : 'Non-CRT'} units to strike — check the log against the transfer.`, 'error').outerHTML : ''}
+        <div class="table-scroll"><table class="lines strike-grid"><thead><tr><th>#</th><th>Date</th><th>Name</th><th class="num">CRT</th><th class="num">Non-CRT</th><th class="num">Strike CRT</th><th class="num">Strike Non-CRT (plasma)</th></tr></thead>
+          <tbody>${rows.map((r, i) => (L().num(r.crt) || L().num(r.noncrt) ? `<tr data-i="${i}"><td class="muted">${i + 1}</td><td>${esc(r.date)}</td><td>${esc(r.name)}</td><td class="num">${fmt(L().num(r.crt))}</td><td class="num">${fmt(L().num(r.noncrt))}</td>
+            <td><input data-s="crt" inputmode="numeric" value="${plan[i].crt || ''}" style="width:56px" ${L().num(r.crt) ? '' : 'disabled'}></td>
+            <td><input data-s="noncrt" inputmode="numeric" value="${plan[i].noncrt || ''}" style="width:56px" ${L().num(r.noncrt) ? '' : 'disabled'}></td></tr>` : '')).join('')}</tbody></table></div>
+        <div class="row"><span class="badge ${okCrt ? 'ok' : 'warn'}">CRT struck ${fmt(st.crt)} of ${fmt(sp.targets.crt)}</span><span class="badge ${okPl ? 'ok' : 'warn'}">Plasma struck ${fmt(st.noncrt)} of ${fmt(sp.targets.plasma)}</span>
+          <span class="muted">Claimed (198 C / Master): CRT ${fmt(claimed.crt)} · Non-CRT ${fmt(claimed.noncrt)} · CBEP ${fmt(claimed.cbep)} — 198 UC: CRT ${fmt(uc.crt)} · Non-CRT ${fmt(uc.noncrt)}</span>
+          <span class="spacer"></span>${sp.saved ? '<button type="button" data-a="auto">Pick automatically</button>' : ''}</div>
+      </div>`);
+      box.querySelectorAll('[data-s]').forEach((inp) => inp.addEventListener('change', () => {
+        if (gone || !el.isConnected) return;
+        const i = Number(inp.closest('tr').dataset.i); const c = inp.dataset.s;
+        plan[i][c] = Math.max(0, Math.min(L().num(inp.value), L().num(rows[i][c])));
+        t.strikes = plan.map((x) => ({ ...x }));
+        bar.markDirty(); redraw();
+      }));
+      const autoBtn = box.querySelector('[data-a="auto"]');
+      if (autoBtn) autoBtn.addEventListener('click', () => { t.strikes = null; bar.markDirty(); redraw(); });
+      sEl.append(box);
+    }
+
+    // ---- what changed from the 198 O to the 198 A (for our own reference)
+    const dEl = el.querySelector('[data-role="diff"]');
+    if (count('o') && count('a')) {
+      const d = L().diffLogs(t.logs.o, t.logs.a);
+      const items = [
+        ...d.changed.map((c) => `<li><strong>${esc(c.name)}</strong> (entry ${c.a + 1} on the A): ${c.fields.map((f) => `${f.label} ${esc(String(f.from))} → ${esc(String(f.to))}${f.minor ? ' <span class="muted">(capitals/spacing)</span>' : ''}`).join('; ')}</li>`),
+        ...d.added.map((x) => `<li class="ok-text">Added on the A: <strong>${esc(x.row.name)}</strong> — ${esc(x.row.address)} (CRT ${L().num(x.row.crt)}, Non-CRT ${L().num(x.row.noncrt)}, CBEP ${L().num(x.row.cbep)})</li>`),
+        ...d.removed.map((x) => `<li class="flag-text">Not on the A: <strong>${esc(x.row.name)}</strong> — ${esc(x.row.address)} (CRT ${L().num(x.row.crt)}, Non-CRT ${L().num(x.row.noncrt)}, CBEP ${L().num(x.row.cbep)})</li>`),
+      ];
+      const dt = d.totals.delta; const sign = (n) => (n > 0 ? `+${n}` : String(n));
+      dEl.append(h(`<details class="o-to-a" ${items.length ? 'open' : ''}><summary><strong>198 O → 198 A changes</strong> <span class="muted">— ${items.length ? `${items.length} change(s)` : 'no changes'}; totals CRT ${d.totals.o.crt}→${d.totals.a.crt} (${sign(dt.crt)}), Non-CRT ${d.totals.o.noncrt}→${d.totals.a.noncrt} (${sign(dt.noncrt)}), CBEP ${d.totals.o.cbep}→${d.totals.a.cbep} (${sign(dt.cbep)})</span></summary>
+        ${items.length ? `<ul class="changes">${items.join('')}</ul>` : ''}</details>`));
+    }
+    return el;
+  }
+
   // ---------------------------------------------------------------- transfer: what the 197 needs that the app can't work out
   function buildForm197(data, bar) {
     const { h, esc } = U();
     const t = draft.transfer;
     const g = t.form197 = t.form197 || {};
+    const P197 = App.Store.transferParties(draft, data);
     const math = L().transferMath(t);
     const logsDefault = !!(t.timeline && t.timeline.sourceLogsReceived && t.timeline.sourceLogsReceived !== 'N/A');
     const logs = g.docsLogs !== undefined ? !!g.docsLogs : logsDefault;
@@ -660,10 +849,10 @@ App.Pages.wc = (function () {
         <div class="field-row">
           <div class="field"><label>SA units — Non-CRT <span class="muted">(from 198SA, of the ${U().fmt(math.claimable.NonCRT.units)} CEW LCD/LED)</span></label><input data-g="saNonCrt" type="text" inputmode="numeric" value="${esc(g.saNonCrt)}" placeholder="0"></div>
           ${math.claimable.CBEP.units ? `<div class="field"><label>SA units — CBEP</label><input data-g="saCbep" type="text" inputmode="numeric" value="${esc(g.saCbep)}" placeholder="0"></div>` : ''}
-          <div class="field"><label>Collector's printed name</label><input data-g="collectorPrinted" list="f197-names" value="${esc(g.collectorPrinted)}"></div>
-          <div class="field"><label>Recycler's printed name</label><input data-g="recyclerPrinted" list="f197-names" value="${esc(g.recyclerPrinted)}"></div>
+          <div class="field"><label>Our 197 signer <span class="muted">(${P197.collectorIsFacility ? 'signs as collector and recycler' : 'signs as recycler'})</span></label>
+            <select data-g="signer">${signerOptions197(data, g.signer || g.recyclerPrinted)}</select></div>
+          ${P197.collectorIsFacility ? '' : `<div class="field"><label>Collector's printed name <span class="muted">(their person)</span></label><input data-g="collectorPrinted" value="${esc(g.collectorPrinted)}"></div>`}
         </div>
-        <datalist id="f197-names">${(data.profile.wcSigners || []).map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
         <div class="row">
           <label class="row"><input type="checkbox" data-c="docsLogs" ${logs ? 'checked' : ''}> Copies of collection logs / 198 / 198SA received</label>
           <label class="row"><input type="checkbox" data-c="docs184" ${g.docs184 ? 'checked' : ''}> Copies of proof of designations / 184s received</label>
@@ -1101,7 +1290,7 @@ App.Pages.wc = (function () {
         const pricing = buildPricing(data, bar);
         const po = buildPurchaseInvoice(data, bar, pricing);
         const onLines = () => { pricing.rebuild(); po.refresh(); };
-        container.append(buildParties(data, bar), buildLines(data, bar, onLines), pricing.el, po.el, buildTimeline(bar), buildAllocations(saved, data, allocs), buildForm197(data, bar), buildLogPanel(saved, bar), buildDocuments(saved, data));
+        container.append(buildParties(data, bar), buildLines(data, bar, onLines), pricing.el, po.el, buildTimeline(bar), buildAllocations(saved, data, allocs), buildLogs198(saved, data, bar), buildForm197(data, bar), buildLogPanel(saved, bar), buildDocuments(saved, data));
       } else if (saved.kind === 'inventory') {
         container.append(buildInventory(data, bar));
       } else if (saved.kind === 'shipment') {

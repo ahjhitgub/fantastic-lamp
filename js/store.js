@@ -31,8 +31,8 @@ App.Store = (function () {
     const t = (wc && wc.transfer) || {};
     const byId = (id) => data.companies.find((c) => c.id === id) || null;
     const facility = { name: data.profile.recyclerName || 'Our facility (set the name in Settings)', cewId: data.profile.cewID || '' };
-    // as a dual entity we can hold a separate collector CEWID; blank = same as the recycler CEWID
-    const asCollector = { name: facility.name, cewId: data.profile.collectorCewID || facility.cewId };
+    // on a handler's transfer (or our own collection) we're both collector and recycler: our CEWID in both boxes
+    const asCollector = { name: facility.name, cewId: facility.cewId };
     const handler = byId(t.handlerId);
     // our own collection (dual entity, no customer) — "Dual entity" rows in the WC log
     const self = !handler && !!t.selfCollected;
@@ -105,7 +105,7 @@ App.Store = (function () {
     return { plates: usOnes ? ours : theirs, whose: usOnes ? 'our vehicle' : company ? `${company.name}'s vehicle` : "the other company's vehicle" };
   }
 
-  async function createWC({ wcNumber, typeId, date, companyId, party, irrNumber, noWc, kind: forcedKind, reference }) {
+  async function createWC({ wcNumber, typeId, date, companyId, party, irrNumber, noWc, kind: forcedKind, reference, transferType }) {
     if (forcedKind === 'crtShipment') {
       // CRT/plasma shipments to another recycler don't get a WC
       const recId = party ? Number(party) : null;
@@ -135,7 +135,8 @@ App.Store = (function () {
       const lastBy = all.filter((w) => w.kind === 'transfer' && w.transfer && w.transfer.irrBy).sort((x, y) => y.id - x.id)[0];
       rec.transfer = { collectorId: role === 'collector' ? partyId : null, handlerId: role === 'handler' ? partyId : null, mode: '',
         irrNumber: irr === undefined ? L().nextIrrNumber(all) : irr, shippingDate: '', licensePlate: '', irrBy: lastBy ? lastBy.transfer.irrBy : '',
-        poDate: '', circumstance: '', invoiceBy: '', deductions: [], scalePerson: '',
+        poDate: '', circumstance: '', invoiceBy: '', deductions: [], scalePerson: '', transferType: transferType || 'cew',
+        logs: { o: null, a: null }, strikes: null,
         lines: [blankTransferLine()], timeline: { wcAssigned: d, materialReceived: d }, activityNotes: '' };
       if (partyId) {
         rec.companyId = partyId;
@@ -159,6 +160,56 @@ App.Store = (function () {
     }
     if (kind === 'generic' && partyId) rec.companyId = partyId;
     return App.DB.add('wcs', rec);
+  }
+
+  /** A transfer's 198 C lines and 198 UC (struck entries), from its basis 198 (A if adjustments were required, else O). */
+  function transfer198(w) {
+    const t = (w && w.transfer) || {};
+    const basis = L().logBasis(t);
+    if (!basis.log) return { basis, lines: [], uc: [], plan: null };
+    const sp = L().strikePlan(t, basis.log.rows);
+    const lines = L().claimLines(basis.log.rows, sp.plan);
+    return { basis, lines, uc: L().ucLines(lines), plan: sp };
+  }
+  /** Everything already sent on 198 UCs from one transfer, by other shipment lines ({src, crt, noncrt}). */
+  const sentFrom = (wcs, transferId, exceptShipmentId) => wcs.filter((x) => (x.kind === 'crtShipment' || x.kind === 'shipment') && x.id !== exceptShipmentId)
+    .flatMap((x) => L().crtLines(x).filter((l) => l.wcId === transferId).flatMap((l) => l.ucSent || []));
+  /**
+   * The 198 UC entries that go out with a CRT/plasma shipment, per source transfer. The first time it's made, each
+   * shipment line takes units from what's left on that transfer's UC and the choice is saved (locked) on the line,
+   * so the same logs are never sent twice; later shipments take from what remains.
+   */
+  async function shipmentUc(shipment, data, { lock = true } = {}) {
+    const out = []; let changed = false;
+    const lines = L().crtLines(shipment);
+    const ids = [...new Set(lines.map((l) => l.wcId))];
+    for (const id of ids) {
+      const w = data.wcs.find((x) => x.id === id);
+      if (!w) continue;
+      const T = transfer198(w);
+      if (!T.basis.log) { out.push({ wc: w, missing: true, lines: [], short: null }); continue; }
+      const sent = sentFrom(data.wcs, id, shipment.id);
+      const taken = []; const short = { crt: 0, plasma: 0 };
+      lines.filter((l) => l.wcId === id).forEach((l) => {
+        if (!l.ucSent) {
+          const need = { crt: l.category === 'crt' ? L().num(l.units) - L().num(l.rejectedUnits) : 0, plasma: l.category === 'plasma' ? L().num(l.units) - L().num(l.rejectedUnits) : 0 };
+          const alloc = L().allocateUc(T.uc, sent.concat(taken), need);
+          l.ucSent = alloc.lines.map((x) => ({ src: x.src, crt: x.crt, noncrt: x.noncrt }));
+          l.ucShort = alloc.short; changed = true;
+        }
+        taken.push(...l.ucSent);
+        short.crt += (l.ucShort && l.ucShort.crt) || 0; short.plasma += (l.ucShort && l.ucShort.plasma) || 0;
+      });
+      const entries = taken.map((x) => ({ ...T.uc[x.src], crt: x.crt, noncrt: x.noncrt, cbep: 0 })).filter((x) => x.name !== undefined);
+      out.push({ wc: w, lines: entries, short, basis: T.basis });
+    }
+    if (changed && lock) await App.DB.put('wcs', shipment);
+    return out;
+  }
+  /** What's left on a transfer's 198 UC after every shipment so far. */
+  function ucRemaining(w, data) {
+    const T = transfer198(w);
+    return { basis: T.basis, uc: T.uc, remaining: L().ucRemaining(T.uc, sentFrom(data.wcs, w.id, null)) };
   }
 
   /** Mark a WC # or IRR # as skipped on purpose, so its "missing" alert goes away. kind: 'wc' | 'irr' */
@@ -262,6 +313,7 @@ App.Store = (function () {
     if (r.packetMonth) t.packetMonth = r.packetMonth;
     t.lotCancelled = r.lotCancelled;
     if (r.selfCollected && !t.handlerId && !t.collectorId) t.selfCollected = true;
+    if (r.typeText) t.transferType = L().transferTypeFromText(r.typeText);   // "cew/cbep transfer" → CEW/CBEP
   }
   function logRecord(r) {
     return { typeText: r.typeText, kind: r.kind, unsure: r.unsure, maybeTransfer: r.maybeTransfer, dateText: r.dateText, dateFixed: r.dateFixed,
@@ -449,6 +501,41 @@ App.Store = (function () {
       await mark('v8-vendors-prices-crt');
     }
 
+    // v10: the CBEP units we buy are "CEW CBEP" again; every transfer gets a type (CEW, CBEP, CEW/CBEP);
+    // the separate collector CEWID setting is retired (handler transfers use our one CEWID).
+    if (!meta.done.includes('v10-cew-cbep-types')) {
+      for (const p of await App.DB.getAll('priceItems')) {
+        if (p.appliesTo === 'cew:cbep' && /^CBEP (Computer Towers|Printers)$/.test(String(p.name).trim())) await App.DB.put('priceItems', { ...p, name: `CEW ${p.name.trim()}` });
+      }
+      for (const w of await App.DB.getAll('wcs')) {
+        if (w.kind !== 'transfer' || !w.transfer || w.transfer.transferType) continue;
+        const cats = (w.transfer.lines || []).filter((l) => L().num(l.irrUnits) || L().num(l.irrWeight)).map((l) => l.category);
+        const cbep = cats.includes('cbep'); const cew = cats.some((c) => ['lcdled', 'crt', 'plasma'].includes(c));
+        const fromLog = w.log && w.log.typeText ? L().transferTypeFromText(w.log.typeText) : null;
+        w.transfer.transferType = fromLog || (cbep && cew ? 'both' : cbep ? 'cbep' : 'cew');
+        w.transfer.logs = w.transfer.logs || { o: null, a: null };
+        await App.DB.put('wcs', w);
+      }
+      const prof = await App.DB.get('facilityProfile', 'profile');
+      if (prof && prof.collectorCewID) { await App.DB.put('facilityProfile', { ...prof, oldCollectorCewID: prof.collectorCewID, collectorCewID: '' }); }
+      await mark('v10-cew-cbep-types');
+    }
+
+    // v9: CBEP is its own thing (never "CEW"), and there can be several CBEP items, each with its own rates.
+    // The one "CEW CBEP" item becomes CBEP Computer Towers (keeping its rates); CBEP Printers is added.
+    if (!meta.done.includes('v9-cbep-items')) {
+      const items = await App.DB.getAll('priceItems');
+      const cbep = items.filter((p) => p.appliesTo === 'cew:cbep');
+      const named = (n) => cbep.some((p) => L().norm(p.name) === L().norm(n));
+      const old = cbep.find((p) => /^cew cbep$/i.test(String(p.name).trim()));
+      if (old && !named('CBEP Computer Towers')) await App.DB.put('priceItems', { ...old, name: 'CBEP Computer Towers' });
+      else if (!cbep.length) await App.DB.add('priceItems', { name: 'CBEP Computer Towers', appliesTo: 'cew:cbep', direction: 'pay', basis: 'lb', dropOff: '', pickUp: '', variable: false, notes: '' });
+      if (!named('CBEP Printers')) await App.DB.add('priceItems', { name: 'CBEP Printers', appliesTo: 'cew:cbep', direction: 'pay', basis: 'lb', dropOff: '', pickUp: '', variable: false, notes: '' });
+      const nc = items.find((p) => p.appliesTo === 'noncew:cbep' && /^non-?cew cbep$/i.test(String(p.name).trim()));
+      if (nc) await App.DB.put('priceItems', { ...nc, name: 'CBEP without source logs' });
+      await mark('v9-cbep-items');
+    }
+
     if (!meta.done.includes('v4-legacy')) {
       const types = await App.DB.getAll('wcTypes');
       const typeId = (kind) => types.find((t) => t.kind === kind).id;
@@ -540,5 +627,5 @@ App.Store = (function () {
     return add.length;
   }
 
-  return { markSkipped, recordVoidWc, importWcLog, plateChoices, isKnownPlate, learnDescriptions, loadAll, transferParties, partyOptions, partyLabel, createWC, deleteWC, wcNumberTaken, irrNumberTaken, ensurePeriod, findOrCreateCompany, addAliases, mergeCompanies, rewriteUnitCompanies, migrate, blankTransferLine, blankWeighLine };
+  return { transfer198, shipmentUc, ucRemaining, markSkipped, recordVoidWc, importWcLog, plateChoices, isKnownPlate, learnDescriptions, loadAll, transferParties, partyOptions, partyLabel, createWC, deleteWC, wcNumberTaken, irrNumberTaken, ensurePeriod, findOrCreateCompany, addAliases, mergeCompanies, rewriteUnitCompanies, migrate, blankTransferLine, blankWeighLine };
 })();

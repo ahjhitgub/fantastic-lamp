@@ -66,9 +66,11 @@ App.Pages.settings = (function () {
           <div class="field"><label>Address <span class="muted">(printed on the IRR, WC and purchase invoice)</span></label><textarea name="address" rows="2">${esc(data.profile.address)}</textarea></div>
           <div class="field-row">
             <div class="field"><label>&nbsp;</label><label class="row"><input type="checkbox" name="dualEntity" ${data.profile.dualEntity ? 'checked' : ''}> Dual entity — approved as both a collector and a recycler</label></div>
-            <div class="field"><label>Collector CEWID # <span class="muted">(only if different from the recycler CEWID)</span></label><input name="collectorCewID" value="${esc(data.profile.collectorCewID)}"></div>
+            <div class="field"><label>198 contact name <span class="muted">(on the 198 Master)</span></label><input name="form198ContactName" value="${esc(data.profile.form198ContactName || '')}"></div>
+            <div class="field"><label>198 contact phone <span class="muted">(blank = facility phone)</span></label><input name="form198ContactPhone" value="${esc(data.profile.form198ContactPhone || '')}"></div>
           </div>
           <div class="field"><label>Authorized WC signers <span class="muted">— one name per line; each WC's scale person is picked from this list</span></label><textarea name="wcSigners" rows="3">${esc((data.profile.wcSigners || []).join('\n'))}</textarea></div>
+          <div class="field"><label>Authorized 197 signers <span class="muted">— one name per line; only these people can sign the CalRecycle 197</span></label><textarea name="form197Signers" rows="3">${esc((data.profile.form197Signers || []).join('\n'))}</textarea></div>
           <div class="field"><label>Our vehicles' license plates <span class="muted">— separate several with commas; used on pick-ups and our deliveries</span></label><input name="vehicles" value="${esc((data.profile.vehicles || []).join(', '))}"></div>
           <p class="hint">We're the recycler on every transfer, and the collector whenever a handler is selected.</p>
           <button type="submit" class="primary">Save profile</button>
@@ -78,9 +80,10 @@ App.Pages.settings = (function () {
         const fd = new FormData(prof);
         await App.DB.put('facilityProfile', { ...data.profile, id: 'profile', recyclerName: String(fd.get('recyclerName')).trim(), cewID: String(fd.get('cewID')).trim(),
           phone: String(fd.get('phone') || '').trim(), address: String(fd.get('address') || '').trim(),
-          dualEntity: fd.get('dualEntity') === 'on', collectorCewID: String(fd.get('collectorCewID') || '').trim(),
+          dualEntity: fd.get('dualEntity') === 'on', form198ContactName: String(fd.get('form198ContactName') || '').trim(), form198ContactPhone: String(fd.get('form198ContactPhone') || '').trim(),
           vehicles: App.Logic.splitPlates(fd.get('vehicles')),
-          wcSigners: [...new Set(String(fd.get('wcSigners') || '').split(/\n+/).map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean))] });
+          wcSigners: [...new Set(String(fd.get('wcSigners') || '').split(/\n+/).map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean))],
+          form197Signers: [...new Set(String(fd.get('form197Signers') || '').split(/\n+/).map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean))] });
         done('Profile saved.');
       });
       container.append(prof);

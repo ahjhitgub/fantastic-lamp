@@ -713,6 +713,10 @@
     const t = wc.transfer || {}; const g = t.form197 || {};
     const tm = L.transferMath(t); const f = tm.form197;
     const P = parties;
+    // our 197 signer signs as the recycler — and as the collector too when we're the collector (a handler's
+    // transfer or our own collection); an outside collector's person is typed in by hand
+    const signer = g.signer || g.recyclerPrinted || '';
+    const collectorName = P.collectorIsFacility ? signer : (g.collectorPrinted || '');
     const fields = {
       'Date of TransferRow1': mdy(wc.date),
       'Approved Collector NameRow1': P.collector ? P.collector.name || '' : '',
@@ -720,8 +724,8 @@
       'Approved Recycler NameRow1': P.facility.name || '',
       'Recycler CEWID Row1': P.facility.cewId || '',
       'documented in the collection log': [P.handler ? `${P.handler.name} (Handler)` : null, tm.hasCrtOrPlasma ? L.CRT_PLASMA_NOTE : null, t.activityNotes || null].filter(Boolean).join('. '),
-      'Printed NameRow1': g.collectorPrinted || '',
-      'Printed NameRow1_2': g.recyclerPrinted || '',
+      'Printed NameRow1': collectorName,
+      'Printed NameRow1_2': signer,
     };
     const sa = { crt: 0, nonCrt: num(g.saNonCrt), cbep: num(g.saCbep) };
     const fill = (suffix, vals, saVals) => {
@@ -757,18 +761,27 @@
       months.slice(0, 2).forEach((k, i) => { fill(i === 0 ? '_2' : '_3', byMonth.get(k), null); reportingMonths[i] = L.monthLabelFromIndex(k); });
     }
     const docsLogs = g.docsLogs !== undefined ? !!g.docsLogs : !!(t.timeline && t.timeline.sourceLogsReceived && t.timeline.sourceLogsReceived !== 'N/A');
-    return { fields, checks: { [L.F197_CHECK_LOGS]: docsLogs, [L.F197_CHECK_184]: !!g.docs184 }, reportingMonths, needTables };
+    return { fields, checks: { [L.F197_CHECK_LOGS]: docsLogs, [L.F197_CHECK_184]: !!g.docs184 }, reportingMonths, needTables,
+      signatures: { collector: P.collectorIsFacility ? signer : '', recycler: signer } };
   };
 
   // ---------- pricing, purchase invoice ----------
   L.PRICE_KEYS = [
-    ['cew:lcdled', 'CEW LCD/LED'], ['cew:crt', 'CEW CRT'], ['cew:plasma', 'CEW Plasma'], ['cew:cbep', 'CEW CBEP'],
-    ['noncew:noncrt', 'Non-CEW Non-CRT (LCD/LED and plasma)'], ['noncew:crt', 'Non-CEW CRT'], ['noncew:cbep', 'Non-CEW CBEP'],
+    ['cew:lcdled', 'CEW LCD/LED'], ['cew:crt', 'CEW CRT'], ['cew:plasma', 'CEW Plasma'], ['cew:cbep', 'CEW CBEP (with source logs)'],
+    ['noncew:noncrt', 'Non-CEW Non-CRT (LCD/LED and plasma)'], ['noncew:crt', 'Non-CEW CRT'], ['noncew:cbep', 'CBEP without source logs'],
     ['other', 'Other (non-CEW) item'],
   ];
   // non-CEW LCD/LED and non-CEW plasma are one line: Non-CEW Non-CRT
   L.nonCewKey = (catKey) => (catKey === 'crt' ? 'noncew:crt' : catKey === 'cbep' ? 'noncew:cbep' : 'noncew:noncrt');
-  L.nonCewLabel = (catKey) => ({ crt: 'Non-CEW CRT', cbep: 'Non-CEW CBEP' }[catKey] || 'Non-CEW Non-CRT');
+  L.nonCewLabel = (catKey) => ({ crt: 'Non-CEW CRT', cbep: 'CBEP without source logs' }[catKey] || 'Non-CEW Non-CRT');
+  /** CBEP items on the price list (CBEP Computer Towers, CBEP Printers, …) — each bought at its own rate. */
+  L.cbepItems = (priceItems) => (priceItems || []).filter((p) => p.appliesTo === 'cew:cbep');
+  /** The CBEP item a line is for: the one picked, or the only one there is. */
+  L.cbepItemFor = (line, priceItems) => {
+    const items = L.cbepItems(priceItems);
+    return items.find((p) => p.id === (line && line.priceItemId)) || (items.length === 1 ? items[0] : null);
+  };
+  L.cbepName = (line, priceItems) => (L.cbepItemFor(line, priceItems) || {}).name || 'CEW CBEP';
   /** Combine rows that print identically (e.g. non-CEW LCD/LED + non-CEW plasma → one Non-CEW Non-CRT row). */
   L.mergeRows = (rows, keyFn) => {
     const out = []; const at = new Map();
@@ -799,7 +812,7 @@
 
   /** Rows shown on the WC and the purchase invoice: the CEW and non-CEW part of each IRR line. */
   const FORM_LABELS = { lcdled: 'LCD/LED', crt: 'CRT', plasma: 'PLASMA', cbep: 'CBEP' };
-  L.documentRows = (transfer) => {
+  L.documentRows = (transfer, priceItems = []) => {
     const rows = [];
     ((transfer && transfer.lines) || []).forEach((line, i) => {
       const m = L.lineMath(line);
@@ -814,7 +827,8 @@
       const suffix = desc ? ` — ${desc}` : '';
       let first = true;
       const take = () => { const t = first ? tare : 0; first = false; return t; };
-      if (m.cewUnits || m.cewWeight) { const t = take(); rows.push({ lineIndex: i, part: 'cew', key: `cew:${m.cat.key}`, label: `CEW ${FORM_LABELS[m.cat.key]}${suffix}`, units: m.cewUnits, weight: m.cewWeight, gross: r2(m.cewWeight + t), tare: t, manualRate: line.cewRate }); }
+      if (m.cewUnits || m.cewWeight) { const t = take(); rows.push({ lineIndex: i, part: 'cew', key: `cew:${m.cat.key}`, priceItemId: m.cat.key === 'cbep' ? line.priceItemId ?? null : undefined,
+        label: `${m.cat.key === 'cbep' ? L.cbepName(line, priceItems) : `CEW ${FORM_LABELS[m.cat.key]}`}${suffix}`, units: m.cewUnits, weight: m.cewWeight, gross: r2(m.cewWeight + t), tare: t, manualRate: line.cewRate }); }
       if (m.nonCewUnits || m.nonCewWeight) { const t = take(); rows.push({ lineIndex: i, part: 'noncew', key: L.nonCewKey(m.cat.key), label: L.nonCewLabel(m.cat.key), units: m.nonCewUnits, weight: m.nonCewWeight, gross: r2(m.nonCewWeight + t), tare: t, manualRate: line.nonCewRate }); }
     });
     return rows;
@@ -832,8 +846,9 @@
    * Non-CEW LCD/LED and non-CEW plasma combine into one Non-CEW Non-CRT row.
    */
   const WC_LABELS = { lcdled: 'LCD/LED', crt: 'CRT', plasma: 'PLASMA', cbep: 'CBEP' };
-  const WC_ORDER = ['CEW LCD/LED', 'CEW CRT', 'CEW PLASMA', 'CEW CBEP', 'Non-CEW Non-CRT', 'Non-CEW CRT', 'Non-CEW CBEP'];
-  L.wcRows = (transfer) => {
+  L.WC_CBEP_LABEL = 'CEW CBEP Units';
+  const WC_ORDER = ['CEW LCD/LED', 'CEW CRT', 'CEW PLASMA', 'CEW CBEP Units', 'Non-CEW Non-CRT', 'Non-CEW CRT'];
+  L.wcRows = (transfer, priceItems = []) => {
     const rows = [];
     ((transfer && transfer.lines) || []).forEach((line) => {
       const m = L.lineMath(line);
@@ -844,9 +859,15 @@
         return;
       }
       const parts = [];
-      if (m.cewUnits || m.cewWeight) parts.push({ label: `CEW ${WC_LABELS[m.cat.key]}`, units: m.cewUnits, net: m.cewWeight });
-      if (m.nonCewUnits || m.nonCewWeight) parts.push({ label: L.nonCewLabel(m.cat.key), units: m.nonCewUnits, net: m.nonCewWeight });
-      if (!parts.length && (m.irrUnits || m.irrWeight)) parts.push({ label: WC_LABELS[m.cat.key], units: m.irrUnits, net: m.irrWeight });
+      // the WC shows every CBEP item — with or without source logs — as one "CEW CBEP Units" line
+      // (the IRR and purchase invoice keep each CBEP item on its own line)
+      if (m.cat.key === 'cbep') {
+        if (m.irrUnits || m.irrWeight) parts.push({ label: L.WC_CBEP_LABEL, units: m.irrUnits, net: m.irrWeight, claim: true });
+      } else {
+        if (m.cewUnits || m.cewWeight) parts.push({ label: `CEW ${WC_LABELS[m.cat.key]}`, units: m.cewUnits, net: m.cewWeight, claim: true });
+        if (m.nonCewUnits || m.nonCewWeight) parts.push({ label: L.nonCewLabel(m.cat.key), units: m.nonCewUnits, net: m.nonCewWeight });
+        if (!parts.length && (m.irrUnits || m.irrWeight)) parts.push({ label: WC_LABELS[m.cat.key], units: m.irrUnits, net: m.irrWeight });
+      }
       parts.forEach((pt, i) => rows.push({ ...pt, weightOnly: false, tare: i === 0 ? tare : 0, gross: r2(pt.net + (i === 0 ? tare : 0)), other: false }));
     });
     const merged = [];
@@ -867,10 +888,12 @@
   L.resolveRateOnly = ({ row, mode, priceItems, company }) => {
     const item = row.key === 'other'
       ? priceItems.find((p) => p.id === row.priceItemId)
-      : priceItems.find((p) => p.appliesTo === row.key);
+      : row.key === 'cew:cbep' ? L.cbepItemFor(row, priceItems)
+        : priceItems.find((p) => p.appliesTo === row.key);
     const basis = (item && item.basis) || 'lb';
     const manual = L.parseMoney(row.manualRate);
     if (manual !== null) return { rate: manual, basis, item, source: 'Set at inspection' };
+    if (!item && row.key === 'cew:cbep' && L.cbepItems(priceItems).length > 1) return { rate: null, basis, item: null, needsRate: true, source: 'Pick which CBEP item this line is' };
     if (!item) return { rate: null, basis, item: null, needsRate: true, source: row.key === 'other' ? 'Pick a price-list item or enter a rate' : 'Not on the price list' };
     const cust = company && company.rates ? company.rates[item.id] : null;
     if (cust && cust.variable) return { rate: null, basis, item, needsRate: true, source: 'Variable for this customer — enter at inspection' };
@@ -892,7 +915,7 @@
    *  final balance = total credit − total deduction
    */
   L.invoiceMath = ({ transfer, mode, priceItems, company }) => {
-    const rows = L.documentRows(transfer).map((r) => {
+    const rows = L.documentRows(transfer, priceItems).map((r) => {
       const res = L.resolveRate({ row: r, mode, priceItems, company });
       const qty = res.basis === 'unit' ? r.units : r.weight;
       return { ...r, ...res, amount: res.rate === null ? null : r2((res.charge ? -1 : 1) * res.rate * qty) };
@@ -1144,6 +1167,286 @@
   };
   /** CEWID #s are numbers only. */
   L.cleanCewId = (v) => String(v ?? '').replace(/\D/g, '');
+
+  // ---------- transfer type: CEW, CBEP, or CEW/CBEP ----------
+  L.TRANSFER_TYPES = [['cew', 'CEW'], ['cbep', 'CBEP'], ['both', 'CEW/CBEP']];
+  L.transferTypeLabel = (k) => (L.TRANSFER_TYPES.find(([x]) => x === k) || [null, ''])[1];
+  /** From the WC log's wording: "cew/cbep transfer" → both, "CBEP only transfer" → cbep, anything else → cew. */
+  L.transferTypeFromText = (text) => {
+    const t = String(text || '').toLowerCase();
+    if (/cbep/.test(t) && /\bcew\b|cew\//.test(t)) return 'both';
+    if (/cbep/.test(t)) return 'cbep';
+    return 'cew';
+  };
+  /** Lines that don't fit the transfer's type (CBEP lines on a CEW transfer, CEW lines on a CBEP one). */
+  L.transferTypeIssues = (transfer) => {
+    const type = transfer && transfer.transferType;
+    if (!type || type === 'both') return [];
+    const lines = (transfer.lines || []).filter((l) => L.lineMath(l).irrUnits || L.lineMath(l).irrWeight);
+    const cbep = lines.filter((l) => l.category === 'cbep').length;
+    const cew = lines.filter((l) => ['lcdled', 'crt', 'plasma'].includes(l.category)).length;
+    if (type === 'cew' && cbep) return [`This is marked a CEW transfer but has ${cbep} CBEP line(s) — change the type to CEW/CBEP or check the lines.`];
+    if (type === 'cbep' && cew) return [`This is marked a CBEP transfer but has ${cew} CEW line(s) — change the type to CEW/CBEP or check the lines.`];
+    return [];
+  };
+
+  // ---------- CalRecycle 198 logs: 198 O / 198 A → 198 C, 198 UC, 198 Master ----------
+  L.SOURCE_TYPES = [['R', 'Resident'], ['B', 'Business'], ['E', 'Education'], ['G', 'Government'], ['H', 'Handler'], ['OC', 'Other collector']];
+  L.sourceType = (t) => String(t || '').trim().toUpperCase();
+  L.rowUnits = (r) => num(r.crt) + num(r.noncrt) + num(r.cbep);
+  /** Contact name & phone: always for B, E, G, H and OC; for residents only at 5 or more units. */
+  L.contactRequired = (r) => L.sourceType(r.type) !== 'R' || L.rowUnits(r) >= 5;
+  const hasPhone = (s) => /\d{3}\D{0,3}\d{3}\D?\d{4}/.test(String(s || ''));
+  L.logTotals = (rows) => (rows || []).reduce((t, r) => ({ crt: t.crt + num(r.crt), noncrt: t.noncrt + num(r.noncrt), cbep: t.cbep + num(r.cbep) }), { crt: 0, noncrt: 0, cbep: 0 });
+  L.parseLogDate = (s) => {
+    const m = /^\s*(\d{1,2})\s*[/\-.]\s*(\d{1,2})\s*[/\-.]\s*(\d{2,4})/.exec(String(s || ''));
+    if (!m) return '';
+    const y = +m[3] < 100 ? 2000 + +m[3] : +m[3];
+    const mm = +m[1]; const dd = +m[2];
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
+    return `${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  };
+  /** CEW units the transfer holds with source logs, by the 198's columns (Non-CRT = LCD/LED + plasma). */
+  L.transferLogUnits = (transfer) => {
+    const out = { crt: 0, noncrt: 0, cbep: 0, plasma: 0 };
+    ((transfer && transfer.lines) || []).forEach((l) => {
+      const u = num(l.cewUnits);
+      if (l.category === 'crt') out.crt += u;
+      else if (l.category === 'lcdled') out.noncrt += u;
+      else if (l.category === 'plasma') { out.noncrt += u; out.plasma += u; }
+      else if (l.category === 'cbep') out.cbep += u;
+    });
+    return out;
+  };
+  /** Problems with one 198 (O or A): per entry, and its totals against the transfer. */
+  L.logIssues = (log, transfer) => {
+    const out = [];
+    const rows = (log && log.rows) || [];
+    const known = L.SOURCE_TYPES.map(([k]) => k);
+    rows.forEach((r, i) => {
+      const n = `Entry ${i + 1}${r.name ? ` (${r.name})` : ''}`;
+      if (!L.parseLogDate(r.date)) out.push({ kind: 'error', text: `${n}: the date "${r.date || ''}" can't be read.` });
+      if (!known.includes(L.sourceType(r.type))) out.push({ kind: 'warning', text: `${n}: source type "${r.type || ''}" isn't R, B, E, G, H or OC.` });
+      if (!String(r.name || '').trim() || !String(r.address || '').trim()) out.push({ kind: 'warning', text: `${n}: name or address missing.` });
+      if (L.contactRequired(r) && !(String(r.contact || '').trim() && hasPhone(r.contact))) {
+        out.push({ kind: 'warning', text: `${n}: ${L.sourceType(r.type) === 'R' ? '5 or more units' : `a ${(L.SOURCE_TYPES.find(([k]) => k === L.sourceType(r.type)) || [0, 'non-resident'])[1].toLowerCase()} source`} needs a contact person name & phone.` });
+      }
+      if (!L.rowUnits(r)) out.push({ kind: 'warning', text: `${n}: no units.` });
+    });
+    ((log && log.pages) || []).forEach((p) => {
+      if (p.written && p.sum && (p.written[0] !== p.sum[0] || p.written[1] !== p.sum[1] || p.written[2] !== p.sum[2])) {
+        out.push({ kind: 'warning', text: `Page ${p.page}: the Total written on the log (${p.written.join(' / ')}) doesn't match its entries (${p.sum.join(' / ')}).` });
+      }
+    });
+    if (transfer && rows.length) {
+      const t = L.logTotals(rows); const x = L.transferLogUnits(transfer);
+      [['crt', 'CRT'], ['noncrt', 'Non-CRT'], ['cbep', 'CBEP']].forEach(([k, label]) => {
+        if (t[k] !== x[k]) out.push({ kind: 'warning', text: `${label}: the log has ${fmt(t[k])} unit(s), the transfer has ${fmt(x[k])} with source logs.` });
+      });
+    }
+    return out;
+  };
+  /** Customer adjustments were required (the timeline step is done, not "N/A") → the 198 A is the basis. */
+  L.adjustmentsRequired = (transfer) => {
+    const v = transfer && transfer.timeline && transfer.timeline.customerAdjustments;
+    return !!v && v !== 'N/A';
+  };
+  L.logBasis = (transfer) => {
+    const logs = (transfer && transfer.logs) || {};
+    const has = (l) => !!(l && l.rows && l.rows.length);
+    if (L.adjustmentsRequired(transfer)) return { which: 'A', log: has(logs.a) ? logs.a : null, missing: !has(logs.a) };
+    return { which: 'O', log: has(logs.o) ? logs.o : null, missing: !has(logs.o) };
+  };
+  /** Units struck on the 198 C: exactly the transfer's CRT and plasma units with source logs. */
+  L.strikeTargets = (transfer) => { const u = L.transferLogUnits(transfer); return { crt: u.crt, plasma: u.plasma }; };
+  /** Default strikes: CRT from the entries with CRT units, plasma from the Non-CRT entries, in log order. */
+  L.autoStrikes = (rows, targets) => {
+    let crt = targets.crt; let plasma = targets.plasma;
+    return rows.map((r) => {
+      const c = Math.min(num(r.crt), crt); crt -= c;
+      const p = Math.min(num(r.noncrt), plasma); plasma -= p;
+      return { crt: c, noncrt: p };
+    });
+  };
+  L.strikeTotals = (plan) => (plan || []).reduce((t, s) => ({ crt: t.crt + num(s && s.crt), noncrt: t.noncrt + num(s && s.noncrt) }), { crt: 0, noncrt: 0 });
+  /**
+   * The strikes to use: your saved picks as long as they fit the log (even while the totals don't match yet —
+   * `complete` says whether they do), else the automatic picks.
+   */
+  L.strikePlan = (transfer, rows) => {
+    const targets = L.strikeTargets(transfer);
+    const saved = transfer && transfer.strikes;
+    const fits = Array.isArray(saved) && saved.length === rows.length
+      && saved.every((s, i) => num(s.crt) <= num(rows[i].crt) && num(s.noncrt) <= num(rows[i].noncrt));
+    const plan = fits ? saved.map((s) => ({ crt: num(s.crt), noncrt: num(s.noncrt) })) : L.autoStrikes(rows, targets);
+    const tot = L.strikeTotals(plan);
+    return { plan, saved: fits, complete: tot.crt === targets.crt && tot.noncrt === targets.plasma, targets };
+  };
+  /**
+   * The 198 C's entries: every entry of the basis log; an entry partly struck is split into two lines with the
+   * same source info — what we claim, then what we don't (struck) right below it.
+   */
+  L.claimLines = (rows, plan) => {
+    const out = [];
+    rows.forEach((r, i) => {
+      const s = (plan && plan[i]) || { crt: 0, noncrt: 0 };
+      const struck = { crt: num(s.crt), noncrt: num(s.noncrt), cbep: 0 };
+      const kept = { crt: num(r.crt) - struck.crt, noncrt: num(r.noncrt) - struck.noncrt, cbep: num(r.cbep) };
+      const base = { date: r.date, type: r.type, name: r.name, address: r.address, contact: r.contact, src: i };
+      if (!struck.crt && !struck.noncrt) out.push({ ...base, ...kept, struck: false });
+      else if (!kept.crt && !kept.noncrt && !kept.cbep) out.push({ ...base, ...struck, struck: true });
+      else out.push({ ...base, ...kept, struck: false }, { ...base, ...struck, struck: true, split: true });
+    });
+    return out;
+  };
+  L.claimedTotals = (lines) => L.logTotals(lines.filter((l) => !l.struck));
+  L.ucLines = (lines) => lines.filter((l) => l.struck).map((l) => ({ ...l, struck: false }));
+  /** 7 entries per 198 page; each page's Total is its own entries. */
+  L.paginate198 = (lines, per = 7) => {
+    const pages = [];
+    for (let i = 0; i < Math.max(lines.length, 1); i += per) {
+      const chunk = lines.slice(i, i + per);
+      pages.push({ lines: chunk, totals: L.logTotals(chunk) });
+    }
+    return pages;
+  };
+  /** O → A: entries added, removed and changed (source info and units), and the totals. */
+  L.diffLogs = (o, a) => {
+    const O = ((o && o.rows) || []).map((r, i) => ({ r, i })); const A = ((a && a.rows) || []).map((r, i) => ({ r, i }));
+    const key = (r) => L.norm(r.name).replace(/\s+/g, '');
+    const addr = (r) => L.norm(r.address).replace(/\s+/g, '');
+    const pairs = []; const usedO = new Set(); const usedA = new Set();
+    const match = (test) => A.forEach((x) => {
+      if (usedA.has(x.i)) return;
+      const y = O.find((z) => !usedO.has(z.i) && test(x.r, z.r));
+      if (y) { pairs.push([y, x]); usedO.add(y.i); usedA.add(x.i); }
+    });
+    match((p, q) => key(p) === key(q) && addr(p) === addr(q));
+    match((p, q) => addr(p) && addr(p) === addr(q));                         // name corrected
+    match((p, q) => key(p) && key(p) === key(q));                            // address corrected
+    match((p, q) => key(p) && key(q) && lev(key(p), key(q)) <= 2);           // small spelling fixes in both
+    const FIELDS = [['date', 'Date'], ['type', 'Type'], ['name', 'Name'], ['address', 'Address'], ['contact', 'Contact'], ['crt', 'CRT'], ['noncrt', 'Non-CRT'], ['cbep', 'CBEP']];
+    const changed = [];
+    pairs.forEach(([x, y]) => {
+      const fields = [];
+      FIELDS.forEach(([f, label]) => {
+        const from = x.r[f]; const to = y.r[f];
+        if (['crt', 'noncrt', 'cbep'].includes(f)) { if (num(from) !== num(to)) fields.push({ field: f, label, from: num(from), to: num(to), units: true }); return; }
+        const same = f === 'date' ? L.parseLogDate(from) === L.parseLogDate(to) : String(from || '').trim() === String(to || '').trim();
+        if (!same) fields.push({ field: f, label, from: String(from || ''), to: String(to || ''), minor: f === 'date' ? false : L.norm(from) === L.norm(to) });
+      });
+      if (fields.length) changed.push({ o: x.i, a: y.i, name: y.r.name || x.r.name, fields });
+    });
+    const t0 = L.logTotals(O.map((x) => x.r)); const t1 = L.logTotals(A.map((x) => x.r));
+    return {
+      added: A.filter((x) => !usedA.has(x.i)).map((x) => ({ a: x.i, row: x.r })),
+      removed: O.filter((x) => !usedO.has(x.i)).map((x) => ({ o: x.i, row: x.r })),
+      changed,
+      totals: { o: t0, a: t1, delta: { crt: t1.crt - t0.crt, noncrt: t1.noncrt - t0.noncrt, cbep: t1.cbep - t0.cbep } },
+    };
+  };
+  /**
+   * 198 UC by shipment: which struck entries go out with a CRT/plasma shipment. `sent` = earlier shipments'
+   * entries [{src, crt, noncrt}] — those units are never sent again. Takes in log order, splitting an entry
+   * when only part of it goes.
+   */
+  L.ucRemaining = (uc, sent) => uc.map((l, i) => {
+    const gone = (sent || []).filter((x) => x.src === i).reduce((t, x) => ({ crt: t.crt + num(x.crt), noncrt: t.noncrt + num(x.noncrt) }), { crt: 0, noncrt: 0 });
+    return { ...l, src: i, crt: num(l.crt) - gone.crt, noncrt: num(l.noncrt) - gone.noncrt };
+  }).filter((l) => l.crt > 0 || l.noncrt > 0);
+  L.allocateUc = (uc, sent, need) => {
+    let crt = num(need.crt); let plasma = num(need.plasma);
+    const take = [];
+    L.ucRemaining(uc, sent).forEach((l) => {
+      const c = Math.min(l.crt, crt); crt -= c;
+      const p = Math.min(l.noncrt, plasma); plasma -= p;
+      if (c || p) take.push({ ...l, crt: c, noncrt: p, cbep: 0 });
+    });
+    return { lines: take, short: { crt, plasma } };
+  };
+
+  // ---------- annual summary (calendar year, each item by its own date) ----------
+  /**
+   * transfers: [{ wc, customer (name), invoice (L.invoiceMath result) }]; shipments: residual and CRT/plasma
+   * shipment WCs; periods: claim periods; otherSales: [{date, buyer, description, amount}].
+   */
+  L.annualSummary = ({ year, transfers = [], shipments = [], periods = [], otherSales = [], materials = [], companyName = () => '' }) => {
+    const Y = String(year);
+    const inYear = (iso) => typeof iso === 'string' && iso.slice(0, 4) === Y;
+    const month = (iso) => Number(String(iso).slice(5, 7)) - 1;
+    const months = () => Array.from({ length: 12 }, () => 0);
+    const KINDS = ['lcdled', 'crt', 'plasma', 'cbep', 'other'];
+    const blankKinds = () => Object.fromEntries(KINDS.map((k) => [k, { units: 0, weight: 0, cew: 0 }]));
+    // received
+    const recv = { rows: [], totals: { units: 0, weight: 0, byKind: blankKinds() }, monthlyWeight: months(), monthlyUnits: months() };
+    const paid = { rows: [], byKind: new Map(), byCompany: new Map(), monthly: months(), totals: { credit: 0, deduction: 0, balance: 0 } };
+    transfers.forEach(({ wc, customer, invoice }) => {
+      const t = wc.transfer || {};
+      if (inYear(wc.date)) {
+        const byKind = blankKinds(); let units = 0; let weight = 0;
+        (t.lines || []).forEach((line) => {
+          const m = L.lineMath(line); const k = KINDS.includes(line.category) ? line.category : 'other';
+          byKind[k].units += m.irrUnits; byKind[k].weight = r2(byKind[k].weight + m.irrWeight); byKind[k].cew += m.cat.cew ? m.cewUnits : 0;
+          units += m.irrUnits; weight = r2(weight + m.irrWeight);
+        });
+        KINDS.forEach((k) => { const a = recv.totals.byKind[k]; a.units += byKind[k].units; a.weight = r2(a.weight + byKind[k].weight); a.cew += byKind[k].cew; });
+        recv.totals.units += units; recv.totals.weight = r2(recv.totals.weight + weight);
+        recv.monthlyUnits[month(wc.date)] += units; recv.monthlyWeight[month(wc.date)] = r2(recv.monthlyWeight[month(wc.date)] + weight);
+        recv.rows.push({ id: wc.id, date: wc.date, wcNumber: wc.wcNumber, customer, type: t.transferType || 'cew', units, weight, byKind });
+      }
+      // paid for material: by the purchase invoice's date
+      const po = t.timeline && t.timeline.poSent && t.timeline.poSent !== 'N/A' ? t.timeline.poSent : '';
+      const invDate = t.poDate || po || wc.date;
+      if (invoice && inYear(invDate) && (invoice.credits.length || invoice.deductions.length)) {
+        const credit = invoice.totalCredit; const deduction = invoice.totalDeduction; const balance = invoice.finalBalance;
+        invoice.credits.forEach((c) => { if (c.amount !== null) paid.byKind.set(c.label.replace(/ — .*$/, ''), r2((paid.byKind.get(c.label.replace(/ — .*$/, '')) || 0) + c.amount)); });
+        paid.byCompany.set(customer || '—', r2((paid.byCompany.get(customer || '—') || 0) + balance));
+        paid.monthly[month(invDate)] = r2(paid.monthly[month(invDate)] + balance);
+        paid.totals.credit = r2(paid.totals.credit + credit); paid.totals.deduction = r2(paid.totals.deduction + deduction); paid.totals.balance = r2(paid.totals.balance + balance);
+        paid.rows.push({ id: wc.id, date: invDate, wcNumber: wc.wcNumber, customer, credit, deduction, balance, missing: invoice.missing });
+      }
+    });
+    // shipped out
+    const matName = (id) => (materials.find((m) => m.id === id) || {}).name || 'Unlisted';
+    const ship = { residual: [], crt: [], monthlyWeight: months(), totals: { residualWeight: 0, crtUnits: 0, crtWeight: 0, plasmaUnits: 0, plasmaWeight: 0 } };
+    const sales = { rows: [], total: 0, charged: 0 };
+    shipments.filter((w) => inYear(w.date)).forEach((w) => {
+      const settle = (w.crtShipment || w.shipment || {}).settlement;
+      const amt = L.settlementAmount(settle);
+      const cl = L.crtLines(w);
+      const crt = cl.filter((l) => l.category === 'crt').reduce((a, l) => ({ units: a.units + num(l.units), weight: r2(a.weight + num(l.weight)) }), { units: 0, weight: 0 });
+      const plasma = cl.filter((l) => l.category === 'plasma').reduce((a, l) => ({ units: a.units + num(l.units), weight: r2(a.weight + num(l.weight)) }), { units: 0, weight: 0 });
+      if (w.kind === 'shipment') {
+        const byMat = new Map(); let weight = 0;
+        ((w.shipment && w.shipment.lines) || []).forEach((l) => { const n = L.lineNet(l); weight = r2(weight + n); const k = l.materialId != null ? matName(l.materialId) : (l.description || 'Other'); byMat.set(k, r2((byMat.get(k) || 0) + n)); });
+        ship.residual.push({ id: w.id, date: w.date, wcNumber: w.wcNumber, vendor: companyName(w.companyId), weight, byMaterial: [...byMat].map(([name, lbs]) => ({ name, lbs })), settlement: settle });
+        ship.totals.residualWeight = r2(ship.totals.residualWeight + weight); ship.monthlyWeight[month(w.date)] = r2(ship.monthlyWeight[month(w.date)] + weight);
+      }
+      if (crt.units || plasma.units || w.kind === 'crtShipment') {
+        ship.crt.push({ id: w.id, date: w.date, recycler: companyName(w.companyId), crt, plasma, settlement: settle });
+        ship.totals.crtUnits += crt.units; ship.totals.crtWeight = r2(ship.totals.crtWeight + crt.weight);
+        ship.totals.plasmaUnits += plasma.units; ship.totals.plasmaWeight = r2(ship.totals.plasmaWeight + plasma.weight);
+        if (w.kind === 'crtShipment') ship.monthlyWeight[month(w.date)] = r2(ship.monthlyWeight[month(w.date)] + crt.weight + plasma.weight);
+      }
+      if (amt > 0) { sales.rows.push({ date: w.date, source: w.kind === 'crtShipment' ? 'CRT/plasma shipment' : 'Residual shipment', who: companyName(w.companyId), description: w.wcNumber ? `WC #${w.wcNumber}` : ((w.crtShipment && w.crtShipment.reference) || ''), amount: amt }); sales.total = r2(sales.total + amt); }
+      if (amt < 0) sales.charged = r2(sales.charged - amt);
+    });
+    otherSales.filter((x) => inYear(x.date)).forEach((x) => { const a = L.parseMoney(x.amount) || 0; sales.rows.push({ date: x.date, source: 'Other sale', who: x.buyer || '', description: x.description || '', amount: a, otherId: x.id }); sales.total = r2(sales.total + a); });
+    sales.rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    // claims: by the claim period's month
+    const claims = { rows: [], totals: { requested: 0, received: 0 } };
+    periods.filter((p) => String(p.year) === Y).sort((a, b) => a.month - b.month || String(a.cewType).localeCompare(b.cewType)).forEach((p) => {
+      const req = L.parseMoney(p.requestedAmount); const rec = L.parseMoney(p.receivedAmount);
+      claims.rows.push({ id: p.id, cewType: p.cewType, month: p.month, requested: req, received: rec, diff: req !== null && rec !== null ? r2(rec - req) : null, paidDate: p.paidDate || '' });
+      claims.totals.requested = r2(claims.totals.requested + (req || 0)); claims.totals.received = r2(claims.totals.received + (rec || 0));
+    });
+    const sortDesc = (m) => [...m].map(([label, amount]) => ({ label, amount })).sort((a, b) => b.amount - a.amount);
+    return {
+      year: Number(year), received: recv, shipped: ship, claims, sales,
+      paid: { ...paid, byKind: sortDesc(paid.byKind), byCompany: sortDesc(paid.byCompany) },
+      money: { income: r2(claims.totals.received + sales.total), spent: r2(paid.totals.balance + sales.charged) },
+    };
+  };
 
   // ---------- customer spreadsheet import ----------
   const CUSTOMER_COLS = [

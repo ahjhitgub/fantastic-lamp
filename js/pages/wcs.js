@@ -148,7 +148,7 @@ App.Pages.wcs = (function () {
       const typeName = (id) => (data.wcTypes.find((t) => t.id === id) || {}).name || '—';
       const compName = (id) => (data.companies.find((c) => c.id === id) || {}).name || '—';
       const today = App.UI.today();
-      const shortType = (w) => ({ transfer: 'Transfer', shipment: 'Shipment', inventory: 'Inventory' }[w.kind] || typeName(w.typeId));
+      const shortType = (w) => (w.kind === 'transfer' ? `Transfer · ${App.Logic.transferTypeLabel((w.transfer && w.transfer.transferType) || 'cew')}` : { shipment: 'Shipment', inventory: 'Inventory' }[w.kind] || typeName(w.typeId));
 
       container.append(header('Weight Certificates', 'Every WC — transfers, residual shipments, inventory checks, and any other type you add in Settings.'));
       const gap = App.UI.gapAlert('wc', App.Logic.wcNumberGaps(data.wcs, data.skipped.wc));

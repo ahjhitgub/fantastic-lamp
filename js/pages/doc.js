@@ -70,18 +70,11 @@ App.Pages.doc = (function () {
       </div>`;
   }
 
-  /** Commodity owner / ship-to. `labelled` = the Address / Zip Code / Phone style used for customers. */
-  function partyBlock(title, party, labelled) {
+  /** Commodity owner / ship-to: the company's name and details, one per line (no field labels). */
+  function partyBlock(title, party) {
     const { esc } = U();
     const lines = addressLines(party && party.address);
-    const body = !party ? '' : labelled
-      ? `<div class="party-name">${esc(party.name || '')}</div>
-         <table class="kv-left"><tbody>
-           <tr><th>Address:</th><td>${esc(lines[0] || '')}</td></tr>
-           <tr><th>Zip Code:</th><td>${esc(lines.slice(1).join(', '))}</td></tr>
-           <tr><th>Phone:</th><td>${esc(party.phone || '')}</td></tr>
-         </tbody></table>`
-      : `<div>${esc(party.name || '')}</div>${lines.map((l) => `<div>${esc(l)}</div>`).join('')}${party.phone ? `<div>${esc(party.phone)}</div>` : ''}`;
+    const body = !party ? '' : `<div>${esc(party.name || '')}</div>${lines.map((l) => `<div>${esc(l)}</div>`).join('')}${party.phone ? `<div>${esc(party.phone)}</div>` : ''}`;
     return `<div><div class="lbl">${esc(title)}</div>${body}</div>`;
   }
 
@@ -133,11 +126,11 @@ App.Pages.doc = (function () {
     const items = (t.lines || []).map((line) => {
       const m = L().lineMath(line); const desc = String(line.description || '').trim();
       const tare = L().r2(L().num(line.irrTare));
-      return { units: m.cat.cew || m.irrUnits ? fmt(m.irrUnits) : 'Wt.Only', label: m.cat.cew ? IRR_LABELS[m.cat.key] + (desc ? ` — ${desc}` : '') : (desc || 'Other (non-CEW)'),
+      return { units: m.cat.cew || m.irrUnits ? fmt(m.irrUnits) : 'Wt.Only', label: m.cat.cew ? (m.cat.key === 'cbep' ? L().cbepName(line, data.priceItems) : IRR_LABELS[m.cat.key]) + (desc ? ` — ${desc}` : '') : (desc || 'Other (non-CEW)'),
         gross: L().r2(m.irrWeight + tare), tare, net: m.irrWeight };
     }).filter((x) => x.gross || x.net || x.units !== 'Wt.Only');
     return `${formHead(data, 'Inbound Receiving Report', [['IRR #', t.irrNumber], ['DATE:', L().shortDate(wc.date)], ['SHIPPING DATE:', L().shortDate(t.shippingDate || wc.date)]])}
-      <div class="irr-blocks">${partyBlock('COMMODITY OWNER:', P.customer, true)}${partyBlock('SHIP TO:', us(data), false)}</div>
+      <div class="irr-blocks">${partyBlock('COMMODITY OWNER:', P.customer)}${partyBlock('SHIP TO:', us(data))}</div>
       ${vehicleBlock([['LICENSE PLATE:', t.licensePlate]])}
       ${grid({ cols: WEIGHT_COLS('UNITS'), rows: items.map((x) => ({ cells: [x.units, desc(x.label), fmt(x.gross), fmt(x.tare), fmt(x.net)] })), totals: weightTotals(items) })}
       ${wc.notes ? `<p><strong>Notes:</strong> ${esc(wc.notes)}</p>` : ''}
@@ -148,11 +141,11 @@ App.Pages.doc = (function () {
   function weightCert(wc, data, P) {
     const { esc, fmt } = U();
     const t = wc.transfer;
-    const rows = L().wcRows(t);
+    const rows = L().wcRows(t, data.priceItems);
     return `${formHead(data, 'Weight Certificate', [['INVOICE #', wc.wcNumber], ['DATE:', L().dotDate(wc.date)], ['SHIPPING DATE:', L().dotDate(t.shippingDate || wc.date)]])}
-      <div class="irr-blocks">${partyBlock('COMMODITY OWNER:', P.customer, true)}${partyBlock('SHIP TO:', us(data), false)}</div>
+      <div class="irr-blocks">${partyBlock('COMMODITY OWNER:', P.customer)}${partyBlock('SHIP TO:', us(data))}</div>
       ${vehicleBlock([['LICENSE PLATE:', t.licensePlate]])}
-      ${grid({ cols: WEIGHT_COLS('UNITS'), rows: rows.map((r) => ({ bold: r.label.startsWith('CEW '), cells: [r.weightOnly ? 'Wt. Only' : fmt(r.units), desc(r.label), fmt(r.gross), fmt(r.tare), fmt(r.net)] })), totals: weightTotals(rows) })}
+      ${grid({ cols: WEIGHT_COLS('UNITS'), rows: rows.map((r) => ({ bold: !!r.claim, cells: [r.weightOnly ? 'Wt. Only' : fmt(r.units), desc(r.label), fmt(r.gross), fmt(r.tare), fmt(r.net)] })), totals: weightTotals(rows) })}
       ${weighmaster(t.scalePerson)}`;
   }
 
@@ -169,7 +162,7 @@ App.Pages.doc = (function () {
     });
     const note = L().storageSentence(L().residualFifo({ materials: data.materials, wcs: data.wcs }).notes.get(wc.id) || []);
     return `${formHead(data, 'Weight Certificate', [['INVOICE #', wc.wcNumber], ['DATE:', L().dotDate(wc.date)], ['SHIPPING DATE:', L().dotDate(wc.date)]])}
-      <div class="irr-blocks">${partyBlock('COMMODITY OWNER:', us(data), false)}${partyBlock('SHIP TO:', vendor, false)}</div>
+      <div class="irr-blocks">${partyBlock('COMMODITY OWNER:', us(data))}${partyBlock('SHIP TO:', vendor)}</div>
       ${vehicleBlock([['LICENSE PLATE:', sh.licensePlate]])}
       ${grid({ cols: WEIGHT_COLS(sh.countLabel === 'skids' ? 'SKIDS' : 'UNITS'), rows: rows.map((r) => ({ bold: r.bold, cells: [r.count, desc(r.label), fmt(r.gross), fmt(r.tare), fmt(r.net)] })),
         totals: weightTotals(rows), note: esc([note, wc.notes].filter(Boolean).join(' ')) })}
@@ -184,7 +177,7 @@ App.Pages.doc = (function () {
     const money = (n) => L().money(n);
     const rate = (r) => (r === null || r === undefined ? '<span class="flag-text no-print">rate needed</span>' : money(r));
     const cols = [{ label: 'UNITS', width: 12 }, { label: 'DESCRIPTION', width: 22 }, { label: 'GROSS', width: 11.5 }, { label: 'TARE', width: 11.5 }, { label: 'NET', width: 11.5 }, { label: 'RATE/LBS', width: 13 }, { label: 'CREDIT', width: 18.5 }];
-    const rows = inv.credits.map((r) => ({ bold: r.label.startsWith('CEW '), cells: [
+    const rows = inv.credits.map((r) => ({ bold: r.part === 'cew', cells: [
       r.part === 'other' && !r.units ? 'Wt. Only' : fmt(r.units), desc(r.label + (r.handling ? '*' : '')), fmt(r.gross), fmt(r.tare), fmt(r.weight),
       r.rate === null ? rate(null) : `${money(r.rate)}${r.basis === 'unit' ? '/unit' : ''}`, r.amount === null ? '' : money(r.amount)] }));
     const g = inv.credits.reduce((a, r) => ({ g: a.g + (r.gross || 0), t: a.t + (r.tare || 0), n: a.n + r.weight }), { g: 0, t: 0, n: 0 });
@@ -193,8 +186,8 @@ App.Pages.doc = (function () {
       + '<tr class="blank"><td></td><td></td><td></td><td></td><td></td></tr>'.repeat(Math.max(0, 4 - ded.length));
     const invoiceDate = t.poDate || (t.timeline && t.timeline.poSent && t.timeline.poSent !== 'N/A' ? t.timeline.poSent : App.UI.today());
     return `<div class="po">${formHead(data, 'Purchase Invoice', [['PO #', wc.wcNumber], ['DATE:', L().slashDate(invoiceDate)], ['SHIPPING DATE:', L().slashDate(t.shippingDate || wc.date)]])}
-      <div class="irr-blocks">${partyBlock('COMMODITY OWNER:', P.customer, true)}${partyBlock('SHIP TO:', us(data), false)}</div>
-      ${vehicleBlock([['LICENSE PLATE:', t.licensePlate], ['CIRCUMSTANCE:', t.circumstance]])}
+      <div class="irr-blocks">${partyBlock('COMMODITY OWNER:', P.customer)}${partyBlock('SHIP TO:', us(data))}</div>
+      ${vehicleBlock([['LICENSE PLATE:', t.licensePlate], ['CIRCUMSTANCE:', t.mode === 'pickup' ? 'Pick up' : t.mode === 'dropoff' ? 'Drop off' : '']])}
       ${grid({ cols, rows, totals: [null, null, ['TOTAL GROSS', fmt(g.g)], ['TOTAL TARE', fmt(g.t)], ['TOTAL NET', fmt(g.n)], null, ['TOTAL CREDIT', money(inv.totalCredit)]] })}
       <table class="doc-table form-grid deductions">
         <colgroup><col style="width:15%"><col style="width:22%"><col style="width:33%"><col style="width:12%"><col style="width:18%"></colgroup>
@@ -205,16 +198,19 @@ App.Pages.doc = (function () {
         <table class="doc-table form-grid box"><tbody><tr><th>TOTAL DEDUCTION</th></tr><tr><td class="c">${money(inv.totalDeduction)}</td></tr></tbody></table>
         <table class="doc-table form-grid box"><tbody><tr><th>FINAL BALANCE</th></tr><tr><td class="c">${money(inv.finalBalance)}</td></tr></tbody></table>
       </div>
-      <div class="form-sign">${signLine('Purchase Invoice by:', t.invoiceBy)}${signLine('Invoice by Signature:', '')}</div></div>`;
+      <div class="form-sign">${signLine('Purchase Invoice by:', t.invoiceBy)}</div></div>`;
   }
 
   // ---------------------------------------------------------------- CalRecycle 197: fill the official form
   const FORM_197_URL = 'forms/CalRecycle197.pdf';
   const PDF_LIB_URL = 'js/vendor/pdf-lib.min.js';
+  const SIGNATURE_FONT_URL = 'js/vendor/signature-font.js';
+  // the 197's signature boxes (Section IV) — the signer's name is drawn here in a script font
+  const SIGNATURE_BOXES = { collector: 'Signature of Approved Collector', recycler: 'Signature of Approved Recycler' };
   let formBytes = null;
-  function loadScript(src) {
+  function loadScript(src, ready) {
     return new Promise((resolve, reject) => {
-      if (window.PDFLib) { resolve(); return; }
+      if (ready()) { resolve(); return; }
       const el = document.createElement('script');
       el.src = src; el.onload = () => resolve(); el.onerror = () => reject(new Error(`Couldn't load ${src}`));
       document.head.append(el);
@@ -237,13 +233,15 @@ App.Pages.doc = (function () {
    * alignment. A value too wide for its box shrinks just enough to fit rather than being cut off.
    */
   async function build197Pdf(values) {
-    await loadScript(PDF_LIB_URL);
+    await loadScript(PDF_LIB_URL, () => !!window.PDFLib);
+    const sigNames = Object.values(values.signatures || {}).filter(Boolean);
+    if (sigNames.length) await loadScript(SIGNATURE_FONT_URL, () => !!App.SignatureFont);
     if (!formBytes) {
       const res = await fetch(FORM_197_URL);
       if (!res.ok) throw new Error(`Couldn't load the blank 197 (${FORM_197_URL}).`);
       formBytes = await res.arrayBuffer();
     }
-    const { PDFDocument, PDFName, PDFHexString, pushGraphicsState, popGraphicsState, beginText, endText, setFontAndSize, setFillingGrayscaleColor, moveText, showText } = window.PDFLib;
+    const { PDFDocument, PDFName, PDFHexString, pushGraphicsState, popGraphicsState, beginText, endText, setFontAndSize, setFillingGrayscaleColor, moveText, showText, rgb } = window.PDFLib;
     const pdf = await PDFDocument.load(formBytes);
     const form = pdf.getForm();
     // the form's own Arial (Default Resources), with its widths, ascent and descent
@@ -262,6 +260,8 @@ App.Pages.doc = (function () {
 
     Object.entries(values.fields).forEach(([name, text]) => {
       const fld = form.getTextField(name);
+      // CalRecycle set the date box to 14 pt, too big for MM/DD/YYYY — 10 pt shows the whole date in every viewer
+      if (name === 'Date of TransferRow1') fld.acroField.setDefaultAppearance('/Arial 10 Tf 0 g');
       const hadFlags = fld.acroField.dict.has(PDFName.of('Ff'));
       fld.setText(text || '');
       if (!hadFlags) fld.acroField.dict.delete(PDFName.of('Ff')); // leave the field's settings exactly as CalRecycle made them
@@ -295,6 +295,26 @@ App.Pages.doc = (function () {
       page2.pushOperators(pushGraphicsState(), beginText(), setFontAndSize('F197Arial', 12), setFillingGrayscaleColor(0), moveText(341, y),
         showText(PDFHexString.of(hex(toWinAnsi(text)))), endText(), popGraphicsState());
     });
+    // Section IV signatures: the signer's name in a script font, in dark pen-like ink, fitted to the box
+    if (sigNames.length) {
+      const F = App.SignatureFont; const page1 = pdf.getPages()[0];
+      Object.entries(SIGNATURE_BOXES).forEach(([who, fieldName]) => {
+        const name = (values.signatures || {})[who];
+        if (!name) return;
+        const rect = form.getField(fieldName).acroField.getWidgets()[0].getRectangle();
+        const chars = Array.from(name).filter((ch) => F.glyphs[ch]);
+        const width = chars.reduce((w, ch) => w + F.glyphs[ch][0], 0) / F.upem;
+        // capitals reach ~0.72 em and descenders ~0.28 em in this script, so ~1.05 em fits the box height
+        const size = Math.min((rect.height - 2) / 1.05, (rect.width - 20) / Math.max(width, 0.01), 26);
+        let x = rect.x + 10;
+        const y = rect.y + (rect.height - 1.0 * size) / 2 + 0.28 * size;
+        chars.forEach((ch) => {
+          const [adv, d] = F.glyphs[ch];
+          if (d) page1.drawSvgPath(d, { x, y, scale: size / F.upem, color: rgb(0.07, 0.11, 0.33), borderWidth: 0 });
+          x += (adv / F.upem) * size;
+        });
+      });
+    }
     return pdf.save({ updateFieldAppearances: false });
   }
 
@@ -312,6 +332,187 @@ App.Pages.doc = (function () {
       print197();
     }
   });
+
+  // ---------------------------------------------------------------- CalRecycle 198 (C, UC, Master) on CalRecycle's blank form
+  const FORM_198_URL = 'forms/CalRecycle198.pdf';
+  let form198Bytes = null;
+  // the form's own Helvetica (/Helv) codes plain characters and accented letters as usual; curly quotes etc. become plain
+  const HELV_FIX = { '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2013': '-', '\u2014': '-', '\u00a0': ' ', '\u2026': '...' };
+  const helvText = (v) => Array.from(String(v ?? '')).map((ch) => HELV_FIX[ch] || ch)
+    .map((ch) => { const c = ch.codePointAt(0); return (c >= 32 && c < 127) || (c >= 192 && c <= 255) || ch === '\n' ? ch : '?'; }).join('');
+  const helvHex = (t) => Array.from(t).map((ch) => ch.codePointAt(0).toString(16).padStart(2, '0')).join('');
+  function wrapText(text, metrics, size, width) {
+    const out = [];
+    String(text).split('\n').forEach((para) => {
+      let line = '';
+      para.split(/\s+/).filter(Boolean).forEach((word) => {
+        const next = line ? `${line} ${word}` : word;
+        if (!line || metrics.widthOfTextAtSize(next, size) <= width) line = next; else { out.push(line); line = word; }
+      });
+      out.push(line);
+    });
+    return out;
+  }
+  /**
+   * A 198 field drawn the way Adobe draws a typed-in value: the form's own Helvetica, the field's alignment,
+   * auto size; multi-line fields wrap (starting at 12 pt and shrinking to fit). Returns where the text sits.
+   */
+  function set198Field(pdf, form, helvRef, metrics, name, value) {
+    const { PDFName } = window.PDFLib;
+    const text = helvText(value).trim();
+    const fld = form.getTextField(name);
+    const hadFlags = fld.acroField.dict.has(PDFName.of('Ff'));
+    fld.setText(text);
+    if (!hadFlags) fld.acroField.dict.delete(PDFName.of('Ff'));
+    const widget = fld.acroField.getWidgets()[0];
+    const rect = widget.getRectangle(); const w = rect.width; const h = rect.height;
+    const q = fld.acroField.getQuadding ? fld.acroField.getQuadding() : 0;
+    const xFor = (tw) => (q === 1 ? (w - tw) / 2 : q === 2 ? w - 2 - tw : 2);
+    let body = ''; let first = null;
+    if (text) {
+      if (fld.isMultiline()) {
+        let size = 12; let lines = [];
+        // shrink until the lines fit the height and the longest word fits the width (a date in the narrow Date box)
+        for (; size > 4; size -= 0.5) {
+          lines = wrapText(text, metrics, size, w - 4);
+          if (lines.length * size * 1.15 <= h - 3 && lines.every((ln) => metrics.widthOfTextAtSize(ln, size) <= w - 4)) break;
+        }
+        body = lines.map((ln, i) => {
+          const tw = metrics.widthOfTextAtSize(ln, size); const x = xFor(tw); const y = h - 2 - size * 0.9 - i * size * 1.15;
+          if (i === 0) first = { x, y, size, width: tw };
+          return `/Helv ${size} Tf 1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm <${helvHex(ln)}> Tj`;
+        }).join('\n');
+      } else {
+        const tw1 = metrics.widthOfTextAtSize(text, 1);
+        let size = Math.floor((h / 1.35) * 10) / 10;
+        if (tw1 * size > w - 4) size = Math.max(4, Math.floor(((w - 4) / tw1) * 10) / 10);
+        const tw = tw1 * size; const x = xFor(tw); const y = (h - 0.925 * size) / 2 + 0.207 * size;
+        first = { x, y, size, width: tw };
+        body = `/Helv ${size} Tf 1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm <${helvHex(text)}> Tj`;
+      }
+    }
+    const content = body ? `/Tx BMC\nq\n1 1 ${(w - 2).toFixed(2)} ${(h - 2).toFixed(2)} re W n\nBT\n0 g\n${body}\nET\nQ\nEMC` : '/Tx BMC\nEMC';
+    const ap = pdf.context.stream(content, { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, w, h], Resources: pdf.context.obj({ Font: pdf.context.obj({ Helv: helvRef }) }) });
+    widget.setNormalAppearance(pdf.context.register(ap));
+    return first ? { ...first, pageX: rect.x + first.x, pageY: rect.y + first.y } : null;
+  }
+  /**
+   * Fills CalRecycle's blank 198: each set = { header, pages: [{lines, totals}], strike } — 7 entries per page,
+   * a fresh copy of the form per page, flattened and joined. On the 198 C (strike) a red line goes through the
+   * units of each struck entry, as on Bellflower's own 198 Cs.
+   */
+  async function build198Pdf(sets) {
+    await loadScript(PDF_LIB_URL, () => !!window.PDFLib);
+    if (!form198Bytes) {
+      const res = await fetch(FORM_198_URL);
+      if (!res.ok) throw new Error(`Couldn't load the blank 198 (${FORM_198_URL}).`);
+      form198Bytes = await res.arrayBuffer();
+    }
+    const { PDFDocument, PDFName, StandardFonts, rgb } = window.PDFLib;
+    const out = await PDFDocument.create();
+    for (const set of sets) {
+      for (const pg of set.pages) {
+        const pdf = await PDFDocument.load(form198Bytes);
+        const form = pdf.getForm();
+        const metrics = await pdf.embedFont(StandardFonts.Helvetica);
+        const helvRef = form.acroForm.dict.lookup(PDFName.of('DR')).lookup(PDFName.of('Font')).get(PDFName.of('Helv'));
+        const put = (n, v) => set198Field(pdf, form, helvRef, metrics, n, v);
+        Object.entries(set.header).forEach(([n, v]) => put(n, v));
+        const marks = [];
+        for (let i = 0; i < 7; i += 1) {
+          const l = pg.lines[i]; const n = i + 1;
+          const u = (x) => (l && L().num(x) ? String(L().num(x)) : '');
+          put(`Date mdyRow${n}`, l ? l.date : ''); put(`Type of CA SourceRow${n}`, l ? l.type : ''); put(`NameRow${n}`, l ? l.name : '');
+          put(`Address City State ZipRow${n}`, l ? l.address : ''); put(`Contact Person Name  PhoneRow${n}`, l ? l.contact : '');
+          const c = put(`CRT CEW UnitsRow${n}`, u(l && l.crt)); const nc = put(`NonCRT CEW UnitsRow${n}`, u(l && l.noncrt)); put(`CBEP CEW UnitsRow${n}`, u(l && l.cbep));
+          if (set.strike && l && l.struck) [c, nc].forEach((m) => { if (m) marks.push(m); });
+        }
+        put('CRT CEW UnitsRowTotal', String(pg.totals.crt)); put('NonCRT CEW UnitsRowTotal', String(pg.totals.noncrt)); put('CBEP CEW UnitsRowTotal', String(pg.totals.cbep));
+        form.flatten({ updateFieldAppearances: false });
+        const page = pdf.getPages()[0];
+        marks.forEach((m) => page.drawLine({ start: { x: m.pageX - 3, y: m.pageY - 2 }, end: { x: m.pageX + m.width + 4, y: m.pageY + m.size * 0.85 }, thickness: 1.3, color: rgb(0.86, 0.1, 0.1) }));
+        const [copied] = await out.copyPages(pdf, [0]);
+        out.addPage(copied);
+      }
+    }
+    return out.save();
+  }
+  const oneLineAddress = (a) => addressLines(a).join(', ');
+  /** The collector/handler boxes: from the company's record (Contact Name = its owner), else from the 198 O/A. */
+  function header198(company, log) {
+    const h = (log && log.header) || {};
+    const isHandler = company && (company.roles || []).includes('handler');
+    return {
+      'Approved CollectorHandler': (company && company.name) || h.name || '',
+      CEWID: company ? (isHandler ? 'Handler' : (company.cewId || h.cewid || '')) : (h.cewid || ''),
+      'Approved CollectorHandler Address City Zip': (company && oneLineAddress(company.address)) || h.address || '',
+      'Contact Name': (company && company.owner) || h.contact || '',
+      Telephone: (company && company.phone) || h.phone || '',
+      'Description of CEW Collection Activity': h.activity || '',
+      'Location of Collection Event if different from above': h.location || '',
+    };
+  }
+  /** Our facility's boxes (198 Master): we're the collector on a handler's transfer. */
+  function facilityHeader198(data, wc) {
+    const p = data.profile; const mode = wc.transfer.mode;
+    return {
+      'Approved CollectorHandler': p.recyclerName || '', CEWID: p.cewID || '', 'Approved CollectorHandler Address City Zip': oneLineAddress(p.address),
+      'Contact Name': p.form198ContactName || '', Telephone: p.form198ContactPhone || p.phone || '',
+      'Description of CEW Collection Activity': mode === 'pickup' ? 'Pick up' : mode === 'dropoff' ? 'Drop off' : '',
+      'Location of Collection Event if different from above': '',
+    };
+  }
+  const mdy = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? `${m[2]}/${m[3]}/${m[1]}` : ''; };
+  /** Everything the 198 tabs need for one transfer. */
+  function transfer198Docs(wc, data, P) {
+    const T = App.Store.transfer198(wc);
+    const company = P.selfCollected ? null : P.customer;
+    const header = P.selfCollected ? facilityHeader198(data, wc) : header198(company, T.basis.log);
+    const docs = {};
+    if (T.basis.log) {
+      docs['198c'] = { label: '198 C', sets: [{ header, pages: L().paginate198(T.lines), strike: true }], lines: T.lines };
+      docs['198uc'] = { label: '198 UC', sets: [{ header, pages: L().paginate198(T.uc), strike: false }], lines: T.uc };
+      const rem = App.Store.ucRemaining(wc, data);
+      const shipped = L().logTotals(T.uc).crt + L().logTotals(T.uc).noncrt - (L().logTotals(rem.remaining).crt + L().logTotals(rem.remaining).noncrt);
+      if (shipped > 0 && rem.remaining.length) docs['198ucr'] = { label: '198 UC — Remaining', sets: [{ header, pages: L().paginate198(rem.remaining), strike: false }], lines: rem.remaining };
+      if (P.handler) {
+        const claimed = L().claimedTotals(T.lines); const hh = P.handler;
+        const line = { date: mdy(wc.date), type: 'H', name: hh.name, address: oneLineAddress(hh.address) || (T.basis.log.header || {}).address || '',
+          contact: [hh.owner || (T.basis.log.header || {}).contact, hh.phone || (T.basis.log.header || {}).phone].filter(Boolean).join(' '), ...claimed };
+        docs['198m'] = { label: '198 Master', sets: [{ header: facilityHeader198(data, wc), pages: L().paginate198([line]), strike: false }], lines: [line] };
+      }
+    }
+    return { T, docs };
+  }
+  function lines198Summary(lines, strike) {
+    const { esc, fmt } = U();
+    return `<table class="doc-table"><thead><tr><th>Date</th><th>Type</th><th>Name</th><th>Address</th><th>Contact</th><th class="num">CRT</th><th class="num">Non-CRT</th><th class="num">CBEP</th>${strike ? '<th></th>' : ''}</tr></thead><tbody>${
+      lines.map((l) => `<tr class="${strike && l.struck ? 'struck-row' : ''}"><td>${esc(l.date)}</td><td>${esc(l.type)}</td><td>${esc(l.name)}</td><td>${esc(l.address)}</td><td>${esc(l.contact)}</td><td class="num">${l.crt ? fmt(l.crt) : ''}</td><td class="num">${l.noncrt ? fmt(l.noncrt) : ''}</td><td class="num">${l.cbep ? fmt(l.cbep) : ''}</td>${strike ? `<td>${l.struck ? `<span class="badge flag">struck${l.split ? ' (split)' : ''}</span>` : ''}</td>` : ''}</tr>`).join('')}</tbody></table>`;
+  }
+  /** Shows a filled 198 like the 197: on the page, Open / Download / Print, and a plain summary underneath. */
+  async function show198(container, bar, { title, sets, summary, filename }) {
+    const { h } = U();
+    const printBtn = bar.querySelector('[data-a="print"]');
+    printBtn.textContent = `Print ${title}`; printBtn.disabled = true;
+    const box = h(`<div class="panel pdf-box">
+      <div class="row spread"><div><strong>${U().esc(title)} — on CalRecycle's 198 (Rev. 1/2026)</strong>
+        <div class="hint">7 entries per page. Print at <strong>Actual size</strong> (100%).</div></div>
+        <div class="row"><a class="button" data-a="open" target="_blank" rel="noopener">Open in a new tab</a><a class="button" data-a="download">Download PDF</a></div></div>
+      <div data-role="pdf"><p class="muted">Filling in the 198…</p></div></div>`);
+    container.append(box, h(`<details class="panel" open><summary><strong>What's on this ${U().esc(title)}</strong></summary><div class="doc-sheet">${summary}</div></details>`),
+      h(`<div class="print-area print-only"><p>Use the <strong>Print ${U().esc(title)}</strong> button to print the form.</p></div>`));
+    try {
+      const bytes = await build198Pdf(sets);
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      box.querySelector('[data-a="open"]').href = url;
+      const dl = box.querySelector('[data-a="download"]'); dl.href = url; dl.download = filename;
+      box.querySelector('[data-role="pdf"]').replaceChildren(h(`<iframe class="pdf-frame" title="${U().esc(title)}" src="${url}"></iframe>`));
+      printBtn.disabled = false;
+    } catch (err) {
+      box.querySelectorAll('a.button').forEach((x) => { x.hidden = true; }); printBtn.hidden = true;
+      box.querySelector('[data-role="pdf"]').replaceChildren(U().notice(`${U().errText(err)} The filled form needs the site opened from its web address (GitHub Pages).`, 'error'));
+    }
+  }
 
   /** Plain-text summary of the same values, under the PDF. */
   function form197Summary(values, P) {
@@ -333,8 +534,8 @@ App.Pages.doc = (function () {
       <p><strong>Collector activity:</strong> ${esc(f['documented in the collection log']) || '—'}</p>
       <h3>III. Documents provided</h3>
       <p>${values.checks[L().F197_CHECK_LOGS] ? '☒' : '☐'} Collection logs / 198 / 198SA &nbsp; ${values.checks[L().F197_CHECK_184] ? '☒' : '☐'} Proof of designations / 184s</p>
-      <h3>IV. Printed names</h3>
-      <p>Collector: ${esc(f['Printed NameRow1']) || '—'} · Recycler: ${esc(f['Printed NameRow1_2']) || '—'}</p>
+      <h3>IV. Printed names and signatures</h3>
+      <p>Collector: ${esc(f['Printed NameRow1']) || '—'}${values.signatures && values.signatures.collector ? ' (signed)' : ''} · Recycler: ${esc(f['Printed NameRow1_2']) || '—'}${values.signatures && values.signatures.recycler ? ' (signed)' : ''}</p>
       <h3>V. Transfer Discrepancy Detail</h3>
       ${values.needTables ? `<p><strong>Recycler Table 1</strong> — Reporting Month/Year: ${esc(values.reportingMonths[0] || '')}</p>${table('CEW type', '_2')}
         ${values.reportingMonths[1] ? `<p><strong>Recycler Table 2</strong> — Reporting Month/Year: ${esc(values.reportingMonths[1])}</p>${table('CEW type', '_3')}` : '<p>Recycler Table 2: left blank until the rest is claimed.</p>'}`
@@ -345,9 +546,30 @@ App.Pages.doc = (function () {
     async render(container) {
       const { h, esc } = U();
       const [idStr, typeParam] = App.State.routeParams;
-      const type = TYPES.some(([k]) => k === typeParam) ? typeParam : 'irr';
       const data = await App.Store.loadAll();
       const wc = data.wcs.find((w) => w.id === Number(idStr));
+      const DOC198 = ['198c', '198uc', '198ucr', '198m'];
+      const type = TYPES.some(([k]) => k === typeParam) || DOC198.includes(typeParam) ? typeParam : 'irr';
+      // a CRT/plasma shipment's 198 UC: the entries of each source transfer's UC that went out with it (locked once made)
+      if (wc && (wc.kind === 'crtShipment' || (wc.kind === 'shipment' && L().crtLines(wc).length)) && typeParam === '198uc') {
+        const recycler = data.companies.find((c) => c.id === wc.companyId);
+        const bar = h(`<div class="doc-toolbar"><a href="#/crtplasma">← CRT & Plasma</a><span class="spacer"></span><button type="button" class="primary" data-a="print">Print</button></div>`);
+        bar.querySelector('[data-a="print"]').addEventListener('click', () => { if (!print197()) window.print(); });
+        container.append(bar);
+        const parts = await App.Store.shipmentUc(wc, data);
+        parts.filter((x) => x.missing).forEach((x) => container.append(U().notice(`WC #${esc(x.wc.wcNumber)} has no 198 O/A entered yet, so its 198 UC can't be made. Add its logs on the transfer.`, 'warning')));
+        parts.filter((x) => x.short && (x.short.crt || x.short.plasma)).forEach((x) => container.append(U().notice(`WC #${esc(x.wc.wcNumber)}: ${[x.short.crt ? `${x.short.crt} CRT` : '', x.short.plasma ? `${x.short.plasma} plasma` : ''].filter(Boolean).join(' and ')} unit(s) in this shipment have no logs left on its 198 UC (non-CEW, or already sent).`, 'warning')));
+        const ok = parts.filter((x) => !x.missing && x.lines.length);
+        if (!ok.length) { container.append(U().empty('No 198 UC entries for this shipment', 'Enter the source transfers\' 198 O/A first.')); return; }
+        const sets = ok.map((x) => {
+          const P2 = App.Store.transferParties(x.wc, data);
+          const hd = P2.selfCollected ? facilityHeader198(data, x.wc) : header198(P2.customer, x.basis.log);
+          return { header: hd, pages: L().paginate198(x.lines), strike: false };
+        });
+        await show198(container, bar, { title: '198 UC — Shipped', sets, filename: `198_UC_shipped_${wc.date || ''}${recycler ? `_${recycler.name.replace(/\W+/g, '_')}` : ''}.pdf`,
+          summary: `<p>Shipped ${esc(wc.date || '')}${recycler ? ` to ${esc(recycler.name)}` : ''}. These entries are locked to this shipment and won't go out again.</p>${ok.map((x) => `<h3>WC #${esc(x.wc.wcNumber)}</h3>${lines198Summary(x.lines, false)}`).join('')}` });
+        return;
+      }
       if (wc && wc.kind === 'shipment') {
         const bar = h(`<div class="doc-toolbar"><a href="#/wc/${wc.id}">← WC #${esc(wc.wcNumber)}</a><span class="spacer"></span><button type="button" class="primary" data-a="print">Print</button></div>`);
         bar.querySelector('[data-a="print"]').addEventListener('click', () => window.print());
@@ -360,12 +582,14 @@ App.Pages.doc = (function () {
       }
       const P = App.Store.transferParties(wc, data);
       const allocs = data.allocations.filter((a) => a.wcId === wc.id);
+      const D198 = transfer198Docs(wc, data, P);
 
       const bar = h(`
         <div class="doc-toolbar">
           <a href="#/wc/${wc.id}">← WC #${esc(wc.wcNumber)}</a>
           <span class="spacer"></span>
           ${TYPES.map(([k, label]) => `<a class="button ${k === type ? 'primary' : ''}" href="#/doc/${wc.id}/${k}">${esc(label)}</a>`).join('')}
+          ${Object.entries(D198.docs).map(([k, d]) => `<a class="button ${k === type ? 'primary' : ''}" href="#/doc/${wc.id}/${k}">${esc(d.label)}</a>`).join('')}
           <button type="button" class="primary" data-a="print">Print</button>
         </div>`);
       bar.querySelector('[data-a="print"]').addEventListener('click', () => { if (!print197()) window.print(); });
@@ -374,6 +598,21 @@ App.Pages.doc = (function () {
       const inv = L().invoiceMath({ transfer: wc.transfer, mode: wc.transfer.mode, priceItems: data.priceItems, company: P.customer });
       if (type === 'invoice' && inv.missing) container.append(U().notice(`${inv.missing} rate(s) still needed — enter them in the Pricing section of the WC.`, 'warning'));
       if (type === 'invoice' && !wc.transfer.mode) container.append(U().notice('Pick up or drop off isn\u2019t chosen on the WC, so price-list rates can\u2019t be picked.', 'warning'));
+
+      if (DOC198.includes(type)) {
+        const d = D198.docs[type];
+        if (!d) {
+          container.append(U().empty(D198.T.basis.log ? 'Nothing to show here' : `No 198 ${D198.T.basis.which} entered yet`,
+            D198.T.basis.log ? '' : `${D198.T.basis.which === 'A' ? 'Customer adjustments were required, so the 198 C and UC come from the 198 A. ' : ''}Enter it on <a href="#/wc/${wc.id}">the WC</a> (Source logs).`));
+          return;
+        }
+        const T = D198.T;
+        if (!T.plan.complete) container.append(U().notice(`The struck units don't add up yet: ${L().strikeTotals(T.plan.plan).crt} of ${T.plan.targets.crt} CRT and ${L().strikeTotals(T.plan.plan).noncrt} of ${T.plan.targets.plasma} plasma. Fix them on <a href="#/wc/${wc.id}">the WC</a> (Source logs) before sending this.`, 'warning'));
+        const info = `<p>Based on the <strong>198 ${T.basis.which}</strong>${T.basis.which === 'A' ? ' (customer adjustments were required)' : ''}. Struck on the 198 C: ${T.plan.targets.crt} CRT and ${T.plan.targets.plasma} plasma unit(s)${T.plan.saved ? ' (your choice of entries)' : ' (entries picked automatically — change them on the WC)'}.</p>`;
+        await show198(container, bar, { title: d.label, sets: d.sets, filename: `${d.label.replace(/\W+/g, '_')}_WC${wc.wcNumber}_${wc.date || ''}.pdf`,
+          summary: info + lines198Summary(d.lines, type === '198c') });
+        return;
+      }
 
       if (type === '197') {
         const values = L().form197Values({ wc, parties: P, allocations: data.allocations, periods: data.periods });

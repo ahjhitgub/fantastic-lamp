@@ -25,6 +25,7 @@ App.Pages.transfers = (function () {
             <div class="field"><label>IRR #</label><input name="irrNumber" value="${esc(L.nextIrrNumber(data.wcs))}"></div>
             <div class="field" style="flex:2"><label>From (customer)</label><select name="party">${App.Store.partyOptions('transfer', data.companies, '')}</select></div>
             <div class="field"><label>WC date <span class="muted">(= received)</span></label><input type="date" name="date" value="${App.UI.today()}"></div>
+            <div class="field"><label>Transfer type</label><select name="transferType">${L.TRANSFER_TYPES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
             <div class="field"><label>&nbsp;</label><button type="submit" class="primary">Create and open</button></div>
           </div>
           <div data-role="err"></div>
@@ -33,7 +34,7 @@ App.Pages.transfers = (function () {
         e.preventDefault();
         const fd = new FormData(form);
         try {
-          const id = await App.Store.createWC({ wcNumber: fd.get('wcNumber'), typeId: transferType.id, date: fd.get('date'), party: fd.get('party'), irrNumber: fd.get('irrNumber') });
+          const id = await App.Store.createWC({ wcNumber: fd.get('wcNumber'), typeId: transferType.id, date: fd.get('date'), party: fd.get('party'), irrNumber: fd.get('irrNumber'), transferType: fd.get('transferType') });
           App.Pages.wc.reset();
           App.UI.go(`#/wc/${id}`);
         } catch (err) { form.querySelector('[data-role="err"]').replaceChildren(App.UI.notice(App.UI.errText(err), 'error')); }
@@ -71,7 +72,7 @@ App.Pages.transfers = (function () {
       const SHORT_STATUS = { 'Fully allocated': 'Full', 'Partially allocated': 'Partial', 'Nothing claimable yet': 'Nothing to claim' };
       container.append(h(`
         <div class="panel"><div class="table-scroll"><table data-list="transfers">
-          <thead><tr><th>WC #</th><th>IRR #</th><th>Received</th><th>Customer</th><th>Material</th><th class="num">IRR</th><th class="num">Claimable CEW</th><th>Claimed in</th><th>Allocation</th><th class="num">Invoice</th><th>Timeline</th></tr></thead>
+          <thead><tr><th>WC #</th><th>IRR #</th><th>Received</th><th>Type</th><th>Customer</th><th>Material</th><th class="num">IRR</th><th class="num">Claimable CEW</th><th>Claimed in</th><th>Allocation</th><th class="num">Invoice</th><th>Timeline</th></tr></thead>
           <tbody>${list.map((r) => {
             const claim = r.m.claimable.NonCRT.units ? r.m.claimable.NonCRT : r.m.claimable.CBEP;
             const claimedIn = r.allocs.map((a) => { const p = periodById.get(a.claimPeriodId); return p ? `${L.MONTHS[p.month - 1].slice(0, 3)} ${p.year} (${fmt(a.units)})` : ''; }).filter(Boolean).join(', ');
@@ -79,6 +80,7 @@ App.Pages.transfers = (function () {
               <td><a href="#/wc/${r.w.id}"><strong>${esc(r.w.wcNumber)}</strong></a></td>
               <td>${esc(r.w.transfer.irrNumber || '') || '<span class="muted">—</span>'}</td>
               <td>${esc(L.shortDate(r.w.date))}</td>
+              <td>${esc(L.transferTypeLabel(r.w.transfer.transferType || 'cew'))}</td>
               <td>${r.P.handler ? esc(r.P.handler.name) : r.P.collector ? `${esc(r.P.collector.name)} <span class="muted">(collector)</span>` : '<span class="muted">—</span>'}</td>
               <td>${r.w.transfer.mode === 'pickup' ? 'Pick-up' : r.w.transfer.mode === 'dropoff' ? 'Drop-off' : '<span class="muted">—</span>'}</td>
               <td class="num">${fmt(r.m.irr.units)} / ${fmt(r.m.irr.weight)} lbs</td>

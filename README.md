@@ -36,10 +36,14 @@ js/store.js              Shared data helpers + one-time migration of pre-v4 data
 js/periods.js            Claim-period dates/totals from allocations
 js/backup.js             Backup download / restore
 js/attachments.js        "Supporting documents" section used on every WC
-js/pages/*.js            One file per page (doc.js = printable transfer documents)
+js/pages/*.js            One file per page (doc.js = printable transfer documents and 198s; annual.js = annual summary)
 js/app.js                Router (#/page or #/page/param) and shell
 js/vendor/pdf-lib.min.js pdf-lib 1.17.1 (MIT) — fills the official CalRecycle 197; loaded only on the 197 tab
 forms/CalRecycle197.pdf  Blank fillable CalRecycle 197 (Rev. 1/2026)
+js/vendor/signature-font.js  Letter shapes of TeX Gyre Chorus (GUST Font License) for 197 signatures; loaded only on the 197 tab
+js/logread.js            Reads uploaded CalRecycle 198 logs (PDF or .xlsx) into entries; also runs in Node for tests
+js/vendor/pdfjs/         pdf.js 5.6 legacy build (Apache-2.0) — reads 198 PDFs; loaded only when a log is read
+forms/CalRecycle198.pdf  Blank fillable CalRecycle 198 (Rev. 1/2026) — the 198 C, UC and Master are filled on it
 CHANGELOG.md             What changed in each version
 tests/logic.test.js      node --test tests/logic.test.js
 ```

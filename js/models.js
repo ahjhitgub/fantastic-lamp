@@ -3,8 +3,8 @@ window.App = window.App || {};
 
 App.Models = {
   // Bump with every build; the matching notes are in CHANGELOG.md.
-  VERSION: '2.9',
-  VERSION_NAME: 'Sorting, filters & companies',
+  VERSION: '3.0',
+  VERSION_NAME: '198 logs & annual summary',
 
   CEW_TYPES: ['CRT', 'NonCRT', 'CBEP'],
   CEW_TYPE_LABELS: { CRT: 'CRT', NonCRT: 'Non-CRT', CBEP: 'CBEP (Battery-Embedded)' },
@@ -52,7 +52,7 @@ App.Models = {
   // Master price list rows created on first run — names only; prices are yours to enter.
   // [appliesTo, name, direction] — we buy CEW units and charge for non-CEW ones
   SEED_PRICE_ITEMS: [
-    ['cew:lcdled', 'CEW LCD/LED', 'pay'], ['cew:crt', 'CEW CRT', 'pay'], ['cew:plasma', 'CEW Plasma', 'pay'], ['cew:cbep', 'CEW CBEP', 'pay'],
+    ['cew:lcdled', 'CEW LCD/LED', 'pay'], ['cew:crt', 'CEW CRT', 'pay'], ['cew:plasma', 'CEW Plasma', 'pay'], ['cew:cbep', 'CEW CBEP Computer Towers', 'pay'], ['cew:cbep', 'CEW CBEP Printers', 'pay'],
     ['noncew:noncrt', 'Non-CEW Non-CRT', 'charge'], ['noncew:crt', 'Non-CEW CRT', 'charge'],
   ],
 

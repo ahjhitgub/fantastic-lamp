@@ -300,9 +300,10 @@ App.Pages.companies = (function () {
         for (const [key, col] of [['lcdled', 'lcdled'], ['crt', 'crt'], ['plasma', 'plasma'], ['cbep', 'cbepRate']]) {
           const cell = row.rates[key];
           if (!columns.has(col) || !cell) continue;
-          const it = await ensureItem(`cew:${key}`);
-          rec.rates[it.id] = { rate: cell.rate, variable: cell.variable };
-          if (cell.variable) notes.push(`${row.name}: ${it.name} "${cell.note}" saved as variable (set at inspection)`);
+          // the sheet has one CBEP price: it applies to every CBEP item (Computer Towers, Printers, …)
+          const targets = key === 'cbep' && L.cbepItems(items).length ? L.cbepItems(items) : [await ensureItem(`cew:${key}`)];
+          targets.forEach((it) => { rec.rates[it.id] = { rate: cell.rate, variable: cell.variable }; });
+          if (cell.variable) notes.push(`${row.name}: ${targets.map((it) => it.name).join(' / ')} "${cell.note}" saved as variable (set at inspection)`);
         }
         // "Handler" in the CEWID column means a handler; a CEWID number means a collector (never both)
         if (columns.has('cewId') && row.isHandler) { rec.roles = App.Logic.resolveRoles([...rec.roles, 'handler'], ['handler']); rec.cewId = ''; }
@@ -373,7 +374,8 @@ App.Pages.companies = (function () {
         ...(isCustomer(c) ? [
           ['Source log system', esc(c.sourceLogSystem)], ['Primary language', esc(c.primaryLanguage)],
           ['Trucking deduction', esc(truckingText(c.truckingDeduction))],
-          ['Rates', rates.map(([k, v]) => `${k} ${v}`).join(' · ')], ['CBEP price/lb', rateCell(c, itemFor('cew:cbep'))],
+          ['Rates', rates.map(([k, v]) => `${k} ${v}`).join(' · ')],
+          ['CBEP rates', App.Logic.cbepItems(data.priceItems).map((it) => `${esc(it.name)} ${rateCell(c, it)}`).join(' · ')],
         ] : []),
         ['Misspellings', (c.aliases || []).map((x) => `<span class="chip">${esc(x)}</span>`).join(' ')],
         ['WCs', String(uses.get(c.id) || 0)],

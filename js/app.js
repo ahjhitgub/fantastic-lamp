@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { menu: 'More', items: [
     { id: 'claimPeriods', label: 'Claim periods' },
     { id: 'crtplasma', label: 'CRT & plasma' },
+    { id: 'annual', label: 'Annual summary' },
     { id: 'disposition', label: 'Battery & panel disposition' },
     { id: 'reports', label: 'Claim forms & reports', tag: 'next' },
   ] },

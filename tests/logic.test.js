@@ -395,7 +395,7 @@ test('197 values: official field names, LCD/LED only, split claim fills Tables 1
   const wc = { id: 5, wcNumber: '2179', date: '2026-07-01', transfer: {
     lines: [{ category: 'lcdled', irrUnits: 57, irrWeight: 1714, cewUnits: 50, nonCewWeight: 200 }, { category: 'plasma', irrUnits: 2, irrWeight: 164, cewUnits: 2 }],
     form197: { saNonCrt: '3', collectorPrinted: 'Joshua Lopez', recyclerPrinted: 'Joshua Lopez' }, timeline: { sourceLogsReceived: '2026-07-02' } } };
-  const parties = { facility: { name: 'Bellflower Recycling Center', cewId: '127632' }, collector: { name: 'Bellflower Recycling Center', cewId: '127362' }, handler: { name: 'Got EWaste' } };
+  const parties = { facility: { name: 'Bellflower Recycling Center', cewId: '127632' }, collector: { name: 'Bellflower Recycling Center', cewId: '127362' }, handler: { name: 'Got EWaste' }, collectorIsFacility: true };
   const periods = [{ id: 1, cewType: 'NonCRT', year: 2026, month: 7 }, { id: 2, cewType: 'NonCRT', year: 2026, month: 8 }];
   const allocations = [{ wcId: 5, claimPeriodId: 1, units: 40, weight: 1200 }, { wcId: 5, claimPeriodId: 2, units: 10, weight: 314 }];
   const v = L.form197Values({ wc, parties, allocations, periods });
@@ -408,6 +408,14 @@ test('197 values: official field names, LCD/LED only, split claim fills Tables 1
   assert.deepEqual([f['Units TransferredCA Sourced NonCRT CEW_2'], f['Weights Transferred lbsCA Sourced NonCRT CEW_2'], f['Units TransferredCA Sourced NonCRT CEW_3']], ['40', '1,200', '10']);
   assert.deepEqual(v.reportingMonths, ['July 2026', 'August 2026']);
   assert.equal(v.checks[L.F197_CHECK_LOGS], true);
+  // a handler's transfer: we're both collector and recycler, so our signer's name goes in both boxes and signs both
+  assert.deepEqual([f['Printed NameRow1'], f['Printed NameRow1_2']], ['Joshua Lopez', 'Joshua Lopez']);
+  assert.deepEqual(v.signatures, { collector: 'Joshua Lopez', recycler: 'Joshua Lopez' });
+  // an outside collector signs their own box
+  const outside = L.form197Values({ wc: { ...wc, transfer: { ...wc.transfer, form197: { signer: 'Jonathan Jaffee', collectorPrinted: 'Bob Smith' } } },
+    parties: { ...parties, handler: null, collector: { name: 'Allied Erecycling', cewId: '127733' }, collectorIsFacility: false }, allocations, periods });
+  assert.deepEqual([outside.fields['Printed NameRow1'], outside.fields['Printed NameRow1_2']], ['Bob Smith', 'Jonathan Jaffee']);
+  assert.deepEqual(outside.signatures, { collector: '', recycler: 'Jonathan Jaffee' });
   assert.equal(v.checks[L.F197_CHECK_184], false);
   // claimed whole in one month → tables stay blank
   const one = L.form197Values({ wc, parties, allocations: [{ wcId: 5, claimPeriodId: 1, units: 50, weight: 1514 }], periods });
@@ -490,4 +498,162 @@ test('missing WC # and IRR # alerts', () => {
   const { rows } = L.parseWcLog(require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'wc-log-sample.tsv'), 'utf8'));
   assert.deepEqual(L.numberGaps(rows.map((r) => r.wcNumber)).missing, []);
   assert.deepEqual(L.numberGaps(rows.map((r) => r.irrNumber)).missing, []);
+});
+
+test('CEW CBEP: several items, each at its own rate', () => {
+  const items = [
+    { id: 1, appliesTo: 'cew:lcdled', name: 'CEW LCD/LED', basis: 'lb', dropOff: '0.30', direction: 'pay' },
+    { id: 4, appliesTo: 'cew:cbep', name: 'CEW CBEP Computer Towers', basis: 'lb', dropOff: '0.40', direction: 'pay' },
+    { id: 5, appliesTo: 'cew:cbep', name: 'CEW CBEP Printers', basis: 'lb', dropOff: '0.25', direction: 'pay' },
+    { id: 6, appliesTo: 'noncew:cbep', name: 'CBEP without source logs', basis: 'lb', dropOff: '0.10', direction: 'charge' },
+  ];
+  const t = { lines: [
+    { category: 'cbep', priceItemId: 5, irrUnits: 6, irrGross: 120, irrTare: 0, irrWeight: 120, cewUnits: 5, nonCewWeight: 20 },
+    { category: 'cbep', priceItemId: 4, irrUnits: 2, irrGross: 60, irrTare: 0, irrWeight: 60, cewUnits: 2 },
+    { category: 'cbep', irrUnits: 1, irrGross: 30, irrTare: 0, irrWeight: 30, cewUnits: 1 },   // kind not picked yet
+  ] };
+  const inv = L.invoiceMath({ transfer: t, mode: 'dropoff', priceItems: items, company: null });
+  const byLabel = (x) => inv.credits.find((r) => r.label === x);
+  assert.deepEqual([byLabel('CEW CBEP Printers').rate, byLabel('CEW CBEP Printers').amount], [0.25, 25]);
+  assert.deepEqual([byLabel('CEW CBEP Computer Towers').rate, byLabel('CEW CBEP Computer Towers').amount], [0.4, 24]);
+  const unpicked = byLabel('CEW CBEP');
+  assert.equal(unpicked.needsRate, true); assert.match(unpicked.source, /Pick which CBEP item/);
+  assert.equal(inv.deductions[0].description, 'CBEP without source logs');
+  assert.equal(L.PRICE_KEYS.find(([k]) => k === 'cew:cbep')[1], 'CEW CBEP (with source logs)');
+  // a single CBEP item needs no picking
+  const one = L.invoiceMath({ transfer: { lines: [t.lines[2]] }, mode: 'dropoff', priceItems: items.filter((p) => p.id !== 5), company: null });
+  assert.equal(one.credits[0].label, 'CEW CBEP Computer Towers');
+});
+
+// ---------- 198 logs — checked against Got E Waste's real 6/24/26 transfer (198 O, A, C, UC, Master) ----------
+const GEW_A = require('./fixtures/got-e-waste-6-24-26-198A.json');
+const gewTransfer = () => ({ lines: [
+  { category: 'lcdled', irrUnits: 35, irrWeight: 1190, cewUnits: 35 },
+  { category: 'plasma', irrUnits: 7, irrWeight: 300, cewUnits: 7 },
+  { category: 'crt', irrUnits: 1, irrWeight: 50, cewUnits: 1 },
+], timeline: { customerAdjustments: '2026-06-26' }, logs: { a: { rows: GEW_A.rows } } });
+
+test('198: source types and contact rules', () => {
+  assert.equal(L.contactRequired({ type: 'R', noncrt: 4 }), false);
+  assert.equal(L.contactRequired({ type: 'r', noncrt: 5 }), true);           // residents: 5 or more units
+  for (const t of ['B', 'E', 'G', 'H', 'OC']) assert.equal(L.contactRequired({ type: t, noncrt: 1 }), true, t);
+  const issues = L.logIssues({ rows: [{ date: '6/24/26', type: 'B', name: 'Acme', address: '1 Main St', contact: 'Bob', noncrt: 1 }] }, null);
+  assert.match(issues.map((i) => i.text).join(' '), /business source needs a contact person name & phone/);
+});
+
+test('198: the A is the basis when adjustments were required; its totals match the transfer', () => {
+  const t = gewTransfer();
+  const b = L.logBasis(t);
+  assert.deepEqual([b.which, b.missing, b.log.rows.length], ['A', false, 16]);
+  assert.deepEqual(L.logTotals(b.log.rows), { crt: 1, noncrt: 42, cbep: 0 });
+  assert.equal(L.logIssues(b.log, t).filter((i) => /unit\(s\), the transfer has/.test(i.text)).length, 0);
+  assert.deepEqual(L.logBasis({ ...t, timeline: {} }), { which: 'O', log: null, missing: true });
+  assert.deepEqual(L.strikeTargets(t), { crt: 1, plasma: 7 });
+});
+
+test('198 C / UC / Master: their strikes on the 6/24/26 transfer', () => {
+  const t = gewTransfer();
+  const rows = GEW_A.rows;
+  // the entries they struck: Jarrod Morgan 2, Janessa Chun 3, Gary Crosby Jr. 2 (Non-CRT) and Ayad Eren 1 (CRT)
+  const pick = { 'Jarrod Morgan': { crt: 0, noncrt: 2 }, 'Janessa Chun': { crt: 0, noncrt: 3 }, 'Gary Crosby Jr.': { crt: 0, noncrt: 2 }, 'Ayad Eren': { crt: 1, noncrt: 0 } };
+  t.strikes = rows.map((r) => pick[r.name] || { crt: 0, noncrt: 0 });
+  const { plan, saved } = L.strikePlan(t, rows);
+  assert.equal(saved, true);
+  const lines = L.claimLines(rows, plan);
+  assert.equal(lines.length, 16);                                            // whole entries struck: no splits
+  const pages = L.paginate198(lines);
+  assert.deepEqual(pages.map((p) => [p.lines.length, p.totals.crt, p.totals.noncrt]), [[7, 0, 18], [7, 1, 18], [2, 0, 6]]); // Totals unchanged, as on their C
+  const uc = L.ucLines(lines);
+  assert.deepEqual(uc.map((l) => [l.name, l.crt, l.noncrt]), [['Jarrod Morgan', 0, 2], ['Janessa Chun', 0, 3], ['Gary Crosby Jr.', 0, 2], ['Ayad Eren', 1, 0]]);
+  assert.deepEqual(L.claimedTotals(lines), { crt: 0, noncrt: 35, cbep: 0 }); // = their 198 Master: 35 Non-CRT
+  // picks being changed one at a time are kept (not complete yet); picks that don't fit the log fall back to automatic
+  const partial = L.strikePlan({ ...t, strikes: rows.map(() => ({ crt: 0, noncrt: 0 })) }, rows);
+  assert.deepEqual([partial.saved, partial.complete], [true, false]);
+  assert.deepEqual([L.strikePlan({ ...t, strikes: [{ crt: 0, noncrt: 0 }] }, rows).saved, L.strikePlan(t, rows).complete], [false, true]);
+});
+
+test('198 C: a partly struck entry splits into two lines, claimed then struck', () => {
+  const rows = [{ date: '01/01/2026', type: 'R', name: 'John Smith', address: 'X', contact: '', crt: 0, noncrt: 4, cbep: 0 },
+    { date: '01/01/2026', type: 'R', name: 'Next', address: 'Y', contact: '', crt: 0, noncrt: 1, cbep: 0 }];
+  const lines = L.claimLines(rows, [{ crt: 0, noncrt: 2 }, { crt: 0, noncrt: 0 }]);
+  assert.deepEqual(lines.map((l) => [l.name, l.noncrt, l.struck]), [['John Smith', 2, false], ['John Smith', 2, true], ['Next', 1, false]]);
+  // 7 per page: 8 lines make two pages
+  assert.deepEqual(L.paginate198(Array(8).fill(lines[0])).map((p) => p.lines.length), [7, 1]);
+});
+
+test('198 O → A changes (their 6/24/26 logs)', () => {
+  const A = GEW_A.rows;
+  const O = A.map((r) => ({ ...r, contact: 'PH#' }));
+  O[0] = { ...O[0], name: 'Jessie Contreres' };
+  O[7] = { ...O[7], address: '1245 morning view dr # 335 escondido CA, 92026' };
+  O[14] = { ...O[14], noncrt: 2 };                                          // Devin Lewis: 2 on the O, 3 on the A
+  const d = L.diffLogs({ rows: O }, { rows: A });
+  assert.deepEqual([d.added.length, d.removed.length], [0, 0]);
+  const by = (n) => d.changed.find((c) => c.name === n);
+  assert.deepEqual(by('Jessie Contreras').fields.filter((f) => f.field === 'name').map((f) => [f.from, f.to]), [['Jessie Contreres', 'Jessie Contreras']]);
+  assert.deepEqual(by('Devin Lewis').fields.filter((f) => f.units).map((f) => [f.label, f.from, f.to]), [['Non-CRT', 2, 3]]);
+  assert.deepEqual(d.totals.delta, { crt: 0, noncrt: 1, cbep: 0 });
+  assert.deepEqual([d.totals.o.noncrt, d.totals.a.noncrt], [41, 42]);
+});
+
+test('198 UC by shipment: 5 CRT + 5 plasma, 3 CRT + 2 plasma shipped, the rest later — never sent twice', () => {
+  const uc = [{ name: 'A', crt: 3, noncrt: 2 }, { name: 'B', crt: 2, noncrt: 3 }];
+  const first = L.allocateUc(uc, [], { crt: 3, plasma: 2 });
+  assert.deepEqual(first.lines.map((l) => [l.name, l.crt, l.noncrt]), [['A', 3, 2]]);
+  const sent = first.lines.map((l) => ({ src: l.src, crt: l.crt, noncrt: l.noncrt }));
+  assert.deepEqual(L.ucRemaining(uc, sent).map((l) => [l.name, l.crt, l.noncrt]), [['B', 2, 3]]);
+  const again = L.allocateUc(uc, sent, { crt: 3, plasma: 0 });              // only 2 CRT left
+  assert.deepEqual([again.lines.map((l) => [l.name, l.crt]), again.short.crt], [[['B', 2]], 1]);
+  // a partial take splits the entry
+  const part = L.allocateUc(uc, [], { crt: 1, plasma: 0 });
+  assert.deepEqual(part.lines.map((l) => [l.name, l.crt]), [['A', 1]]);
+});
+
+test('transfer type: from the WC log wording, and lines that don\'t fit', () => {
+  assert.equal(L.transferTypeFromText('cew/cbep transfer'), 'both');
+  assert.equal(L.transferTypeFromText('CBEP only transfer'), 'cbep');
+  assert.equal(L.transferTypeFromText('cew transfer only'), 'cew');
+  assert.equal(L.transferTypeFromText('CBEP/CEW Transfer'), 'both');
+  assert.match(L.transferTypeIssues({ transferType: 'cew', lines: [{ category: 'cbep', irrUnits: 2, irrWeight: 40 }] })[0], /CBEP line/);
+  assert.equal(L.transferTypeIssues({ transferType: 'both', lines: [{ category: 'cbep', irrUnits: 2, irrWeight: 40 }] }).length, 0);
+});
+
+test('WC: every CBEP item is one "CEW CBEP Units" line; the invoice keeps them apart', () => {
+  const items = [{ id: 4, appliesTo: 'cew:cbep', name: 'CEW CBEP Computer Towers', basis: 'lb', dropOff: '0.40', direction: 'pay' },
+    { id: 5, appliesTo: 'cew:cbep', name: 'CEW CBEP Printers', basis: 'lb', dropOff: '0.25', direction: 'pay' }];
+  const t = { lines: [
+    { category: 'cbep', priceItemId: 5, irrUnits: 6, irrGross: 120, irrTare: 10, irrWeight: 110, cewUnits: 5, nonCewWeight: 20 },
+    { category: 'cbep', priceItemId: 4, irrUnits: 2, irrGross: 60, irrTare: 0, irrWeight: 60, cewUnits: 2 },
+  ] };
+  assert.deepEqual(L.wcRows(t, items).map((r) => [r.label, r.units, r.gross, r.tare, r.net, r.claim]), [['CEW CBEP Units', 8, 180, 10, 170, true]]);
+  const inv = L.invoiceMath({ transfer: t, mode: 'dropoff', priceItems: items, company: null });
+  assert.deepEqual(inv.credits.filter((r) => /^CEW CBEP/.test(r.label)).map((r) => [r.label, r.rate]), [['CEW CBEP Printers', 0.25], ['CEW CBEP Computer Towers', 0.4]]);
+});
+
+test('annual summary: received, paid by kind, shipped, claims requested vs received, sales — by calendar year', () => {
+  const items = [{ id: 1, appliesTo: 'cew:lcdled', name: 'CEW LCD/LED', basis: 'lb', dropOff: '0.30', direction: 'pay' }];
+  const mk = (id, date, lines, extra = {}) => ({ id, date, wcNumber: String(id), kind: 'transfer', transfer: { mode: 'dropoff', lines, transferType: 'cew', ...extra } });
+  const w1 = mk(1, '2026-03-02', [{ category: 'lcdled', irrUnits: 10, irrGross: 200, irrTare: 0, irrWeight: 200, cewUnits: 10 }, { category: 'crt', irrUnits: 2, irrGross: 100, irrTare: 0, irrWeight: 100, cewUnits: 2 }]);
+  const w2 = mk(2, '2025-12-30', [{ category: 'lcdled', irrUnits: 5, irrGross: 100, irrTare: 0, irrWeight: 100, cewUnits: 5 }], { poDate: '2026-01-04' });
+  const inv = (w) => L.invoiceMath({ transfer: w.transfer, mode: 'dropoff', priceItems: items, company: null });
+  const sum = L.annualSummary({ year: 2026, transfers: [w1, w2].map((wc) => ({ wc, customer: 'Got E Waste', invoice: inv(wc) })),
+    shipments: [
+      { id: 10, kind: 'crtShipment', date: '2026-04-01', companyId: 7, crtShipment: { lines: [{ wcId: 1, category: 'crt', units: 2, weight: 100 }], settlement: { type: 'paid', amount: '40' } } },
+      { id: 11, kind: 'shipment', date: '2026-04-09', wcNumber: '2209', companyId: 8, shipment: { lines: [{ materialId: 3, net: 500 }], settlement: { type: 'charged', amount: '25' } } },
+    ],
+    periods: [{ id: 1, cewType: 'NonCRT', year: 2026, month: 3, requestedAmount: '230.00', receivedAmount: '228.50', paidDate: '2026-05-20' }, { id: 2, cewType: 'NonCRT', year: 2025, month: 12, requestedAmount: '100' }],
+    otherSales: [{ id: 1, date: '2026-06-01', buyer: 'Scrap buyer', description: 'misc metal', amount: '15.25' }, { id: 2, date: '2025-06-01', amount: '99' }],
+    materials: [{ id: 3, name: 'ABS Plastic' }], companyName: (id) => ({ 7: 'Clean Earth', 8: 'E Recycle' }[id] || '') });
+  // received: only the 2026 transfer (w2 was received 12/30/2025)
+  assert.deepEqual([sum.received.rows.length, sum.received.totals.units, sum.received.totals.weight, sum.received.totals.byKind.crt.units], [1, 12, 300, 2]);
+  assert.equal(sum.received.monthlyWeight[2], 300);
+  // paid: both invoices are dated 2026 (w2 by its PO date, 1/4/26)
+  assert.deepEqual([sum.paid.rows.length, sum.paid.totals.balance], [2, 90]);          // 200×.30 + 100×.30
+  assert.deepEqual(sum.paid.byKind[0], { label: 'CEW LCD/LED', amount: 90 });
+  // shipped + sales
+  assert.deepEqual([sum.shipped.crt.length, sum.shipped.totals.crtUnits, sum.shipped.residual[0].weight, sum.shipped.residual[0].byMaterial[0].name], [1, 2, 500, 'ABS Plastic']);
+  assert.deepEqual([sum.sales.total, sum.sales.charged, sum.sales.rows.map((r) => r.source)], [55.25, 25, ['CRT/plasma shipment', 'Other sale']]);
+  // claims: requested vs received
+  assert.deepEqual(sum.claims.rows.map((r) => [r.requested, r.received, r.diff, r.paidDate]), [[230, 228.5, -1.5, '2026-05-20']]);
+  assert.deepEqual(sum.money, { income: 283.75, spent: 115 });
 });

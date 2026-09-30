@@ -2,6 +2,67 @@
 
 Each build gets a version number. It shows in the top bar under the app name (on wide screens) and at the top of Settings.
 
+## 3.0 — 198 logs & annual summary
+- **Transfer type**: each transfer is a **CEW**, **CBEP** or **CEW/CBEP** transfer — chosen when creating it and on the
+  WC, shown on the Transfers and WC lists, and filled in from the WC log's wording ("cew/cbep transfer", "CBEP only
+  transfer"). The WC warns when its lines don't fit its type.
+- **"CEW CBEP" again**: the CBEP units we buy are "CEW CBEP Computer Towers" and "CEW CBEP Printers" (renamed
+  automatically). "CBEP without source logs" keeps its name.
+- **One CBEP line on the WC**: every CBEP item, with or without source logs, is one **"CEW CBEP Units"** line on the
+  weight certificate. The IRR and purchase invoice still list each CBEP item on its own line.
+- **198 O and 198 A (source logs)**, on each transfer's WC:
+  - **Upload** the 198 as a PDF or Excel file and the app reads it — CalRecycle's fillable 198, a 198 saved as PDF, a
+    spreadsheet copy printed to PDF, the older 2020 layout, or the .xlsx itself. The file is kept with the transfer.
+  - **Handwritten or scanned**: type the entries in and attach the scans. A scanned PDF is recognized and switched
+    to typing.
+  - Each entry is checked: readable date, source type (R, B, E, G, H, OC), name and address, and a contact person
+    name & phone — always for B, E, G, H and OC, and for residents at 5 or more units; the log's totals are checked
+    against its written page totals and against the transfer's CRT, Non-CRT and CBEP units.
+  - **Which one counts**: the 198 A when the timeline's "Customer adjustments" step is used, otherwise the 198 O.
+  - **O → A changes**: entries added or removed, source info corrected, units changed, and the totals — for our
+    own reference.
+- **198 C, 198 UC and 198 Master**, filled on CalRecycle's blank 198 (Rev. 1/2026), 7 entries per page with extra
+  pages as needed (new tabs on the transfer's documents):
+  - **198 C**: the 198 O/A with exactly the transfer's CRT and plasma units struck — a red line through the units,
+    page Totals as on the log. You pick which entries (any), or the app picks; an entry only partly struck is split
+    into two lines (claimed, then struck).
+  - **198 UC**: the struck entries on their own form, totals of the struck units.
+  - **198 Master** (handler transfers only): our facility with our CEWID, and the handler as one type H source with
+    the units we claim. Its contact name and phone are set in Settings.
+  - The collector/handler boxes come from the company's record (Contact Name = its owner), the rest from the log.
+- **198 UC by shipment**: a CRT/plasma shipment makes a "198 UC — Shipped" with the entries that went out
+  (splitting entries as needed). Those entries are locked to that shipment, so they're never sent again; the
+  transfer's "198 UC — Remaining" shows what's left. The CRT & plasma page shows what's been sent from each transfer.
+- **Our CEWID on handler transfers**: we're both collector and recycler, so 127632 goes in both 197 boxes and on the
+  198 Master. The separate collector CEWID setting is gone.
+- **Annual summary** (More menu), January–December: units and weight received per transfer, what we paid for each
+  kind of material (by company and month), residual and CRT/plasma shipments, claim payments requested vs.
+  received, and sales — shipments we were paid for plus **other sales** you record there. Month-by-month charts.
+- **Claim periods** have payment requested, payment received and date received.
+
+## 2.10 — CBEP items & form fixes
+- **CBEP items**: the price list can hold several CBEP items, each bought at its own rate — starting with
+  **CBEP Computer Towers** and **CBEP Printers**. On a transfer, the line's item list names each one; the IRR, WC and
+  purchase invoice print that name and pay that rate. A CBEP line with no item picked asks which one. The old
+  "CEW CBEP" item became CBEP Computer Towers (keeping its rates); CBEP Printers was added with blank rates. The customer
+  sheet's one CBEP price applies to every CBEP item.
+- **CBEP is never "CEW"**: "CEW CBEP" is now "CBEP …", and "Non-CEW CBEP" is "CBEP without source logs". (The 197 keeps
+  CalRecycle's own wording, "CA Sourced CBEP CEW", since it's their form.)
+- **IRR lines**: the description box sits under the item again — the units / "Wt. Only" box no longer covers it.
+  (List tables keep one line per row; editing tables wrap again.)
+- **IRR, WC and purchase invoice**: the company block lists the company's details without the "Address:", "Zip Code:"
+  and "Phone:" labels, names in plain text like the templates.
+- **Purchase invoice**: Circumstance is "Drop off" or "Pick up" from the transfer; the "Invoice by Signature" line is
+  gone.
+- **CalRecycle 197**:
+  - The Date of Transfer box is set to 10 pt (CalRecycle had it at 14 pt), so the whole date shows in every viewer.
+  - Signers come from their own list, **Authorized 197 signers** in Settings (separate from the WC signers).
+  - On a handler's transfer or our own collection, our signer's name goes in both Printed Name boxes — collector and
+    recycler — and signs both. With an outside collector, their person's name is typed in and their box isn't signed.
+  - Signature boxes show the signer's name in a script font (TeX Gyre Chorus, GUST Font License).
+  - Otherwise the form is unchanged: checked against the original — nothing differs outside the fill-in and
+    signature boxes.
+
 ## 2.9 — Sorting, filters & companies
 - **Every list sorts and filters**: click a column heading to sort (again to reverse); **Filter** above a list opens a
   filter box under each heading — a dropdown for columns with a few values (type, status, packet month…), text for
