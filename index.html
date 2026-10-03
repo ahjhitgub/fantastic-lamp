@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CEW / CBEP Tracker</title>
+<link rel="stylesheet" href="css/styles.css?v=3.1.0">
+</head>
+<body>
+
+<header class="appbar" id="appbar">
+  <div class="appbar-inner">
+    <a class="brand" href="#/dashboard">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-13.6 5.7"/><path d="M4 12A8 8 0 0 1 17.6 6.3"/><path d="M17.8 2.6v3.9h-3.9"/><path d="M6.2 21.4v-3.9h3.9"/></svg>
+      </span>
+      <span class="brand-name">CEW / CBEP Tracker<small>CalRecycle claims · <span id="app-version"></span></small></span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-nav">Menu</button>
+    <nav class="topnav" id="top-nav" aria-label="Main"></nav>
+    <div class="period-pill">
+      <label for="period-select">Claim period</label>
+      <select id="period-select"></select>
+    </div>
+  </div>
+</header>
+
+<main id="main-content"></main>
+
+<!-- Core (no dependencies) -->
+<script src="js/models.js?v=3.1.0" defer></script>
+<script src="js/logic.js?v=3.1.0" defer></script>
+<script src="js/logread.js?v=3.1.0" defer></script>
+<script src="js/checklistmap.js?v=3.1.0" defer></script>
+<script src="js/ui.js?v=3.1.0" defer></script>
+<script src="js/db.js?v=3.1.0" defer></script>
+<script src="js/backup.js?v=3.1.0" defer></script>
+<script src="js/attachments.js?v=3.1.0" defer></script>
+<script src="js/periods.js?v=3.1.0" defer></script>
+<script src="js/store.js?v=3.1.0" defer></script>
+<script src="js/pages/dashboard.js?v=3.1.0" defer></script>
+<script src="js/pages/claimPeriods.js?v=3.1.0" defer></script>
+<script src="js/pages/wcs.js?v=3.1.0" defer></script>
+<script src="js/pages/wc.js?v=3.1.0" defer></script>
+<script src="js/pages/doc.js?v=3.1.0" defer></script>
+<script src="js/pages/transfers.js?v=3.1.0" defer></script>
+<script src="js/pages/cancellations.js?v=3.1.0" defer></script>
+<script src="js/pages/audit.js?v=3.1.0" defer></script>
+<script src="js/pages/residuals.js?v=3.1.0" defer></script>
+<script src="js/pages/crtplasma.js?v=3.1.0" defer></script>
+<script src="js/pages/annual.js?v=3.1.0" defer></script>
+<script src="js/pages/cbep.js?v=3.1.0" defer></script>
+<script src="js/pages/disposition.js?v=3.1.0" defer></script>
+<script src="js/pages/reports.js?v=3.1.0" defer></script>
+<script src="js/pages/companies.js?v=3.1.0" defer></script>
+<script src="js/pages/prices.js?v=3.1.0" defer></script>
+<script src="js/pages/descriptions.js?v=3.1.0" defer></script>
+<script src="js/pages/settings.js?v=3.1.0" defer></script>
+<script src="js/app.js?v=3.1.0" defer></script>
+
+</body>
+</html>
