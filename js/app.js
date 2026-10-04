@@ -23,12 +23,13 @@ const NAV_ITEMS = [
 ];
 // claim work lives on the claim ribbon, beside the claim picker
 const CLAIM_TABS = [
+  { id: 'claimTransfers', label: 'Transfers' },
   { id: 'cancellations', label: 'Cancellations & audit' },
   { id: 'residuals', label: 'Residuals' },
   { id: 'reports', label: 'Claim forms' },
 ];
 // claim work: done inside a claim period (each shows the period at the top)
-const CLAIM_PAGES = ['cancellations', 'audit', 'residuals', 'reports', 'cbep', 'disposition'];
+const CLAIM_PAGES = ['claimTransfers', 'cancellations', 'audit', 'residuals', 'reports', 'cbep', 'disposition'];
 const PERIOD_KEY = 'calrecycleTracker.activePeriod';
 
 function closeMenus() {

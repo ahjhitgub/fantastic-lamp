@@ -135,6 +135,20 @@ App.UI = {
    * disabled (except list sorting/filtering, document links, and anything marked data-period-ok), with a button
    * to switch to "All — no claim period" to edit.
    */
+  /** A confirmation window: resolves true on Confirm, false on Cancel or Esc. Nothing should be saved until it's true. */
+  confirmDialog({ title, html, confirmLabel = 'Confirm' }) {
+    return new Promise((resolve) => {
+      const d = App.UI.h(`<dialog class="confirm-dialog"><h2>${App.UI.esc(title)}</h2><div class="dlg-body">${html}</div>
+        <div class="row"><span class="spacer"></span><button type="button" data-a="cancel">Cancel</button><button type="button" class="primary" data-a="ok">${App.UI.esc(confirmLabel)}</button></div></dialog>`);
+      document.body.append(d);
+      const done = (v) => { if (d.open) d.close(); d.remove(); resolve(v); };
+      d.querySelector('[data-a="cancel"]').addEventListener('click', () => done(false));
+      d.querySelector('[data-a="ok"]').addEventListener('click', () => done(true));
+      d.addEventListener('cancel', (e) => { e.preventDefault(); done(false); });
+      d.showModal();
+    });
+  },
+
   /** Read-only page with a note (no switch button). */
   lockPage(root, html) {
     const UI = App.UI;

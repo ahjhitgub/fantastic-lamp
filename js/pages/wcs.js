@@ -213,7 +213,7 @@ App.Pages.wcs = (function () {
       const statusOpts = (sel) => options(data.wcStatuses.map((s) => ({ value: s.id, label: s.name })), sel, '(no status)');
       const table = h(`
         <div class="panel"><div class="table-scroll"><table class="dense" data-list="wcs">
-          <thead><tr><th>WC #</th><th>Type</th><th>Date</th><th>Company</th><th>Status</th><th>Paid / due</th><th>Packet</th><th>Lot</th><th>Notes / weights</th><th class="num">Docs</th></tr></thead>
+          <thead><tr><th>WC #</th><th>Type</th><th>Date</th><th>Company</th><th>Status</th><th>Paid / due</th><th>Packet</th><th>Lot</th><th>Notes / weights</th><th class="num">Docs</th><th></th></tr></thead>
           <tbody>${list.map((w) => `
             <tr data-id="${w.id}">
               <td><a href="#/wc/${w.id}"><strong>${esc(w.wcNumber)}</strong></a></td>
@@ -226,6 +226,7 @@ App.Pages.wcs = (function () {
               <td>${w.transfer && w.transfer.lotCancelled ? 'Cancelled' : '<span class="muted">—</span>'}</td>
               <td class="wrap">${summary(w, data) ? esc(summary(w, data)) : w.notes ? `<span class="muted" title="${esc(w.notes)}">${esc(w.notes.length > 90 ? `${w.notes.slice(0, 90)}…` : w.notes)}</span>` : '<span class="muted">—</span>'}</td>
               <td class="num">${docCount.get(w.id) || 0}</td>
+              <td><a href="#/doc/${w.id}/wc">Print</a></td>
             </tr>`).join('')}</tbody>
         </table></div></div>`);
       table.querySelectorAll('[data-role="status"]').forEach((sel) => sel.addEventListener('change', async () => {

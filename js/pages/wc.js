@@ -1362,6 +1362,9 @@ App.Pages.wc = (function () {
       else container.append(general
         ? U().header('Inventory entry (no WC)', `End-of-month inventory · ${U().esc(forMonth && forMonth[0] ? L().monthLabel(forMonth[0], forMonth[1]) : '')}`)
         : U().header(`WC #${saved.wcNumber}`, U().esc(type ? type.name : 'Weight certificate')));
+      if (!saved.noWc && saved.wcNumber && saved.kind !== 'crtShipment') {
+        container.append(U().h(`<div class="row print-row"><a class="button" href="#/doc/${saved.id}/wc">Print WC #${U().esc(saved.wcNumber)}</a></div>`));
+      }
       if (flash) { container.append(U().notice(flash.text, flash.kind)); flash = null; }
       const bar = buildSaveBar(saved, data);
       container.append(bar.el, buildCommon(saved, data, bar));

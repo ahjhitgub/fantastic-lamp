@@ -699,3 +699,10 @@ button, a.button { white-space: nowrap; }
 .section-save[hidden] { display: none; }
 tr.row-dirty > td { background: #FFFBEA; }
 tr.row-dirty > td:first-child { box-shadow: inset 4px 0 0 var(--sunbeam); }
+
+/* confirmation window */
+dialog.confirm-dialog { border: 1px solid var(--line); border-radius: 18px; padding: 22px 24px; max-width: min(720px, 94vw); background: var(--surface); color: var(--ink); box-shadow: var(--shadow-pop); }
+dialog.confirm-dialog::backdrop { background: rgba(30, 58, 47, .35); }
+dialog.confirm-dialog h2 { font-family: var(--font-display); font-size: 21px; margin: 0 0 12px; color: var(--canopy); }
+dialog.confirm-dialog .dlg-body { margin-bottom: 16px; }
+.print-row { margin: -8px 0 14px; }

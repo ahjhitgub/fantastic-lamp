@@ -37,7 +37,8 @@ js/periods.js            Claim-period dates/totals from allocations
 js/backup.js             Backup download / restore
 js/attachments.js        "Supporting documents" section used on every WC
 js/pages/*.js            One file per page (doc.js = printable documents, 198s and the Merged File; annual.js = annual summary;
-                         cbep.js = CBEP month; reports.js = claim forms)
+                         cbep.js = CBEP month; reports.js = claim forms;
+                         claimtransfers.js = adding transfers to a claim)
 js/app.js                Router (#/page or #/page/param) and shell
 js/vendor/pdf-lib.min.js pdf-lib 1.17.1 (MIT) — fills the official CalRecycle 197; loaded only on the 197 tab
 forms/CalRecycle197.pdf  Blank fillable CalRecycle 197 (Rev. 1/2026)

@@ -2,6 +2,16 @@
 
 Each build gets a version number. It shows in the top bar under the app name (on wide screens) and at the top of Settings.
 
+## 3.6 — Print any WC & claim transfers
+- **Print any WC**: every WC with a number has a **Print WC** button on its page and a Print link in the WC list —
+  residual shipments, inventory WCs (our facility as commodity owner, each weighing of each material), CBEP generation
+  certificates, and any other WC type (its number, date and company, with weight lines to fill in).
+- **CBEP generation certificates** read "Wt. Only" under Units and "Net Only" under Gross and Tare.
+- **Transfers** tab on the claim ribbon (inside a claim): what's on the claim, and every transfer of the claim's program
+  received by the period's end that isn't fully claimed — whole or partly claimed (with what's left). Tick them, lower
+  the units for a partial claim (pounds follow), and **Add to the claim**: a confirmation window lists each WC # and
+  amount and the claim's new totals; nothing is saved until you confirm.
+
 ## 3.5.1 — Month-end checks list the right residuals
 - **Fixed**: CBEP month-end checks made before 3.5 still listed CEW Non-CRT residuals under Materials on hand. A CBEP check
   now always lists only CBEP residuals — including ones added in Settings after the check was made — and a Non-CRT check

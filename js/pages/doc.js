@@ -172,9 +172,33 @@ App.Pages.doc = (function () {
     const month = g.forMonth ? L().monthLabel(Number(g.forMonth.slice(0, 4)), Number(g.forMonth.slice(5, 7))) : '';
     return `${formHead(data, 'Weight Certificate', [['INVOICE #', wc.wcNumber], ['DATE:', L().dotDate(wc.date)], ['GENERATED IN:', month]])}
       <div class="irr-blocks">${partyBlock('COMMODITY OWNER:', us(data))}<div><div class="lbl">GENERATED FROM:</div><div>Cancellation of CBEP CEW during ${esc(month)}</div></div></div>
-      ${grid({ cols: WEIGHT_COLS('UNITS'), rows: [{ bold: true, cells: ['Wt. Only', desc(`CBEP ${g.residual || ''}`), 'Wt. Only', 'Wt. Only', fmt(net)] }],
+      ${grid({ cols: WEIGHT_COLS('UNITS'), rows: [{ bold: true, cells: ['Wt. Only', desc(`CBEP ${g.residual || ''}`), 'Net Only', 'Net Only', fmt(net)] }],
         totals: [null, null, null, null, ['TOTAL NET', fmt(net)]] })}
       ${weighmaster(g.scalePerson)}`;
+  }
+
+  /** An inventory WC (e.g. LCD lamps): our facility as commodity owner, each weighing of each material on hand. */
+  function inventoryWc(wc, data) {
+    const { fmt } = U();
+    const inv = wc.inventory || {}; const mat = (id) => data.materials.find((m) => m.id === id);
+    const month = inv.forMonth ? L().monthLabel(Number(inv.forMonth.slice(0, 4)), Number(inv.forMonth.slice(5, 7))) : '';
+    const rows = (inv.lines || []).filter((l) => L().lineNet(l) || L().num(l.gross)).map((l) => {
+      const net = L().lineNet(l); const tare = L().r2(L().num(l.tare)); const m = mat(l.materialId);
+      return { bold: true, cells: ['Wt. Only', desc(m ? m.name : 'Material'), fmt(L().num(l.gross) || L().r2(net + tare)), fmt(tare), fmt(net)] };
+    });
+    const tot = rows.length ? (inv.lines || []).reduce((a, l) => ({ g: a.g + (L().num(l.gross) || L().lineNet(l) + L().num(l.tare)), t: a.t + L().num(l.tare), n: a.n + L().lineNet(l) }), { g: 0, t: 0, n: 0 }) : { g: 0, t: 0, n: 0 };
+    return `${formHead(data, 'Weight Certificate', [['INVOICE #', wc.wcNumber], ['DATE:', L().dotDate(wc.date)], ['INVENTORY FOR:', month]])}
+      <div class="irr-blocks">${partyBlock('COMMODITY OWNER:', us(data))}</div>
+      ${grid({ cols: WEIGHT_COLS('UNITS'), rows, totals: [null, null, ['TOTAL GROSS', fmt(L().r2(tot.g))], ['TOTAL TARE', fmt(L().r2(tot.t))], ['TOTAL NET', fmt(L().r2(tot.n))]] })}
+      ${weighmaster(inv.scalePerson || wc.scalePerson)}`;
+  }
+  /** Any other WC type: its number, date and company, with weight lines to fill in. */
+  function genericWc(wc, data) {
+    const c = data.companies.find((x) => x.id === wc.companyId);
+    return `${formHead(data, 'Weight Certificate', [['INVOICE #', wc.wcNumber], ['DATE:', L().dotDate(wc.date)]])}
+      <div class="irr-blocks">${partyBlock('COMMODITY OWNER:', c ? { name: c.name, lines: addressLines(c.address), phone: c.phone } : us(data))}</div>
+      ${grid({ cols: WEIGHT_COLS('UNITS'), rows: [], totals: [null, null, ['TOTAL GROSS', ''], ['TOTAL TARE', ''], ['TOTAL NET', '']] })}
+      ${weighmaster(wc.scalePerson)}`;
   }
 
   // ---------------------------------------------------------------- an HTML form drawn into a PDF page (the WC in the Merged File)
@@ -652,6 +676,12 @@ App.Pages.doc = (function () {
         });
         await show198(container, bar, { title: '198 UC — Shipped', sets, filename: `198_UC_shipped_${wc.date || ''}${recycler ? `_${recycler.name.replace(/\W+/g, '_')}` : ''}.pdf`,
           summary: `<p>Shipped ${esc(wc.date || '')}${recycler ? ` to ${esc(recycler.name)}` : ''}. These entries are locked to this shipment and won't go out again.</p>${ok.map((x) => `<h3>WC #${esc(x.wc.wcNumber)}</h3>${lines198Summary(x.lines, false)}`).join('')}` });
+        return;
+      }
+      if (wc && !wc.noWc && (wc.kind === 'inventory' || wc.kind === 'generic')) {
+        const bar = h(`<div class="doc-toolbar"><a href="#/wc/${wc.id}">← WC #${esc(wc.wcNumber)}</a><span class="spacer"></span><button type="button" class="primary" data-a="print">Print</button></div>`);
+        bar.querySelector('[data-a="print"]').addEventListener('click', () => window.print());
+        container.append(bar, h(`<div class="doc-sheet print-area">${wc.kind === 'inventory' ? inventoryWc(wc, data) : genericWc(wc, data)}</div>`));
         return;
       }
       if (wc && wc.kind === 'generation') {
