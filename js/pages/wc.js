@@ -1138,6 +1138,51 @@ App.Pages.wc = (function () {
     return el;
   }
 
+  // ---------------------------------------------------------------- changing a WC's type (after a mistake)
+  async function openTypeChange(saved, data) {
+    const { h, esc } = U();
+    if (dirty) { window.alert('Save or discard your changes to this WC first.'); return; }
+    const units = await App.DB.getAll('cancelledUnits');
+    const types = data.wcTypes.filter((t) => t.id !== saved.typeId && t.kind !== 'crtShipment');
+    const cur = data.wcTypes.find((t) => t.id === saved.typeId);
+    const kindName = (k) => App.Store.KIND_NAMES[k || 'generic'] || 'WC';
+    const d = h(`<dialog class="confirm-dialog"><h2>Change the type of WC #${esc(saved.wcNumber)}</h2>
+      <p class="muted mt-0">Now: <strong>${esc(cur ? cur.name : '—')}</strong> (${esc(kindName(saved.kind))}).</p>
+      <div class="field"><label>New type</label><select data-role="newtype"><option value="">— pick —</option>${types.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></div>
+      <div data-role="explain"></div>
+      <div class="row"><span class="spacer"></span><button type="button" data-a="cancel">Cancel</button><button type="button" class="primary" data-a="ok" disabled>Change type</button></div></dialog>`);
+    document.body.append(d);
+    const sel = d.querySelector('[data-role="newtype"]'); const ok = d.querySelector('[data-a="ok"]'); const ex = d.querySelector('[data-role="explain"]');
+    const explain = () => {
+      const to = data.wcTypes.find((t) => t.id === Number(sel.value));
+      if (!to) { ex.innerHTML = ''; ok.disabled = true; return; }
+      const same = (to.kind || 'generic') === saved.kind;
+      const block = App.Store.typeChangeBlockers(saved, to, data, units);
+      const back = !same && saved.stash && saved.stash[to.kind || 'generic'];
+      ex.innerHTML = same
+        ? '<div class="notice ok">Same kind of WC — only its type changes. Everything on it stays.</div>'
+        : block.length
+          ? `<div class="notice error"><strong>Can't change it to a ${esc(kindName(to.kind))} yet:</strong><ul>${block.map((b) => `<li>${esc(b)}</li>`).join('')}</ul></div>`
+          : `<div class="notice warning">It becomes a ${esc(kindName(to.kind))}. <strong>Kept:</strong> WC #, date, company, status, notes and attached documents.
+              <strong>Not carried over:</strong> its ${esc(kindName(saved.kind))} details (${saved.kind === 'transfer' ? 'IRR lines, 198 logs, pricing, timeline' : saved.kind === 'shipment' ? 'shipment lines and paperwork' : saved.kind === 'inventory' ? 'materials on hand' : saved.kind === 'generation' ? 'the residual and its weight' : 'nothing'}) —
+              they're kept with the WC and come back if you switch back.${back ? ` <strong>Its earlier ${esc(kindName(to.kind))} details will come back.</strong>` : ''}</div>`;
+      ok.disabled = !!block.length;
+    };
+    sel.addEventListener('change', explain);
+    const close = () => { if (d.open) d.close(); d.remove(); };
+    d.querySelector('[data-a="cancel"]').addEventListener('click', close);
+    d.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+    ok.addEventListener('click', async () => {
+      try {
+        const r = await App.Store.changeWcType(saved.id, Number(sel.value));
+        close(); App.Pages.wc.reset();
+        setFlash(`WC #${saved.wcNumber} is now ${r.to.name}.${r.restored ? ' Its earlier details are back.' : ''}`, 'ok');
+        App.rerender();
+      } catch (err) { ex.innerHTML = `<div class="notice error">${esc(U().errText(err))}</div>`; }
+    });
+    d.showModal();
+  }
+
   // ---------------------------------------------------------------- CBEP shipment paperwork (CBEP Claim Completeness Checklist)
   function buildCbepPaperwork(data, bar) {
     const { h, esc, options } = U();
@@ -1363,7 +1408,11 @@ App.Pages.wc = (function () {
         ? U().header('Inventory entry (no WC)', `End-of-month inventory · ${U().esc(forMonth && forMonth[0] ? L().monthLabel(forMonth[0], forMonth[1]) : '')}`)
         : U().header(`WC #${saved.wcNumber}`, U().esc(type ? type.name : 'Weight certificate')));
       if (!saved.noWc && saved.wcNumber && saved.kind !== 'crtShipment') {
-        container.append(U().h(`<div class="row print-row"><a class="button" href="#/doc/${saved.id}/wc">Print WC #${U().esc(saved.wcNumber)}</a></div>`));
+        const row = U().h(`<div class="row print-row"><a class="button" href="#/doc/${saved.id}/wc">Print WC #${U().esc(saved.wcNumber)}</a>
+          <button type="button" data-a="change-type">Change type</button>
+          ${(saved.typeHistory || []).length ? `<span class="muted">Type changed: ${saved.typeHistory.map((x) => `${U().esc(x.from)} → ${U().esc(x.to)} (${U().esc(L().shortDate(x.date))})`).join('; ')}</span>` : ''}</div>`);
+        row.querySelector('[data-a="change-type"]').addEventListener('click', () => openTypeChange(saved, data));
+        container.append(row);
       }
       if (flash) { container.append(U().notice(flash.text, flash.kind)); flash = null; }
       const bar = buildSaveBar(saved, data);

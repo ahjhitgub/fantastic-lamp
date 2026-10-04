@@ -72,3 +72,7 @@ survives; they are migrated into the stores above once, on first load.
 ## 3.5 additions
 - **materials**: `program: 'cew'|'cbep'` — a CEW Non-CRT residual (uses `category`, the 196B column, and `ownWc`) or a CBEP
   residual (uses `residual196C`). Names are stored without the program; it's shown in front ("CBEP Power Boards").
+
+## 3.7 additions
+- **wcs**: `typeHistory: [{from, to, date}]` (type changes); `stash: {kind: details}` — a kind's details kept aside after a
+  change of kind, restored when switching back.

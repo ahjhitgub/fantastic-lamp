@@ -214,6 +214,67 @@ App.Store = (function () {
     return { basis: T.basis, uc: T.uc, remaining: L().ucRemaining(T.uc, sentFrom(data.wcs, w.id, null)) };
   }
 
+  // ---------------------------------------------------------------- changing a WC's type (after a mistake)
+  /** Fresh details for a kind — what creating a WC of that kind would set up. */
+  function kindDefaults(kind, w, all) {
+    const d = w.date || App.UI.today();
+    if (kind === 'transfer') {
+      return { collectorId: null, handlerId: null, mode: '', irrNumber: L().nextIrrNumber(all), shippingDate: '', licensePlate: '', irrBy: '',
+        poDate: '', circumstance: '', invoiceBy: '', deductions: [], scalePerson: '', transferType: 'cew', logs: { o: null, a: null }, strikes: null,
+        lines: [blankTransferLine()], timeline: { wcAssigned: d, materialReceived: d }, activityNotes: '' };
+    }
+    if (kind === 'shipment') return { lines: [{ description: '', cew: true, materialId: null, gross: '', tare: '', net: '' }], mode: '', licensePlate: '', shipmentType: 'cew', paperwork: {} };
+    if (kind === 'inventory') return { forMonth: d.slice(0, 7), lines: [], materialOrder: [] };
+    if (kind === 'generation') return { forMonth: d.slice(0, 7), residual: 'Other', lines: [{ gross: '', tare: '', net: '' }], scalePerson: '' };
+    return null;
+  }
+  const KIND_NAMES = { transfer: 'transfer', shipment: 'residual shipment', inventory: 'inventory WC', generation: 'CBEP generation certificate', generic: 'WC' };
+  /** What stops a WC from changing kind: claim records that depend on it. Same-kind changes are never blocked. */
+  function typeChangeBlockers(w, to, data, units) {
+    if (!to || (to.kind || 'generic') === w.kind) return [];
+    const out = [];
+    if (w.kind === 'transfer') {
+      const al = data.allocations.filter((a) => a.wcId === w.id);
+      if (al.length) out.push(`It's on ${al.length} claim${al.length === 1 ? '' : 's'} — remove its allocations first (its Claim periods section).`);
+      const lot = units.filter((u) => String(u.lotNumber || '') === String(w.wcNumber || '')).length;
+      if (lot) out.push(`${lot} cancellation log unit${lot === 1 ? '' : 's'} use it as their lot #.`);
+      if (w.transfer && w.transfer.claimParts && Object.keys(w.transfer.claimParts).length) out.push('Its 198 C is split across claims.');
+    }
+    if (w.kind === 'shipment' && L().crtLines(w).some((l) => l.ucSent)) out.push('Its 198 UC entries are locked to it.');
+    if (w.kind === 'generation' || w.kind === 'inventory') {
+      const m = (w.generation || w.inventory || {}).forMonth;
+      const sub = data.periods.find((p) => L().periodMonthKey(p) === m && p.submittedDate && (w.kind === 'inventory' || p.cewType === 'CBEP'));
+      if (sub) out.push(`It's counted in the ${App.Models.formatPeriodLabel(sub)} claim, already submitted.`);
+    }
+    return out;
+  }
+  /**
+   * Change a WC's type. Same kind: just the type. A different kind: the WC #, date, company, status, notes and documents
+   * stay; the new kind starts fresh, and the old details are kept with the WC so switching back brings them back.
+   */
+  async function changeWcType(id, typeId) {
+    const w = await App.DB.get('wcs', id); const types = await App.DB.getAll('wcTypes');
+    const from = types.find((t) => t.id === w.typeId); const to = types.find((t) => t.id === Number(typeId));
+    if (!to) throw new Error('Pick a WC type.');
+    const data = await loadAll(); const units = await App.DB.getAll('cancelledUnits');
+    const block = typeChangeBlockers(w, to, data, units);
+    if (block.length) throw new Error(block.join(' '));
+    const oldKind = w.kind; const newKind = to.kind || 'generic';
+    let restored = false;
+    if (oldKind !== newKind) {
+      w.stash = { ...(w.stash || {}) };
+      if (w[oldKind] !== undefined) { w.stash[oldKind] = w[oldKind]; delete w[oldKind]; }
+      const back = w.stash[newKind]; delete w.stash[newKind]; restored = !!back;
+      const fresh = back || kindDefaults(newKind, w, data.wcs);
+      if (fresh) w[newKind] = fresh;
+      w.kind = newKind;
+    }
+    w.typeId = to.id;
+    w.typeHistory = [...(w.typeHistory || []), { from: from ? from.name : '', to: to.name, date: App.UI.today() }];
+    await App.DB.put('wcs', w);
+    return { from, to, kindChanged: oldKind !== newKind, restored };
+  }
+
   // ---------------------------------------------------------------- claim-period views
   /** The selected claim period, or null for "All — no claim period". */
   function currentPeriod(data) { return data.periods.find((p) => p.id === App.State.currentPeriodId) || null; }
@@ -771,5 +832,5 @@ App.Store = (function () {
     return add.length;
   }
 
-  return { currentPeriod, inScope, issueGeneration, cbepStored, saveCbepStored, cbepGenDays, saveCbepGenDay, createCbepCheck, cbepDaily, saveCbepDaily, claimPart198, transfer198, shipmentUc, ucRemaining, markSkipped, recordVoidWc, importWcLog, plateChoices, isKnownPlate, learnDescriptions, loadAll, transferParties, partyOptions, partyLabel, createWC, deleteWC, wcNumberTaken, irrNumberTaken, ensurePeriod, findOrCreateCompany, addAliases, mergeCompanies, rewriteUnitCompanies, migrate, blankTransferLine, blankWeighLine };
+  return { changeWcType, typeChangeBlockers, KIND_NAMES, currentPeriod, inScope, issueGeneration, cbepStored, saveCbepStored, cbepGenDays, saveCbepGenDay, createCbepCheck, cbepDaily, saveCbepDaily, claimPart198, transfer198, shipmentUc, ucRemaining, markSkipped, recordVoidWc, importWcLog, plateChoices, isKnownPlate, learnDescriptions, loadAll, transferParties, partyOptions, partyLabel, createWC, deleteWC, wcNumberTaken, irrNumberTaken, ensurePeriod, findOrCreateCompany, addAliases, mergeCompanies, rewriteUnitCompanies, migrate, blankTransferLine, blankWeighLine };
 })();

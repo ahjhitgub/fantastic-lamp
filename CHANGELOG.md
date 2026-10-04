@@ -2,6 +2,14 @@
 
 Each build gets a version number. It shows in the top bar under the app name (on wide screens) and at the top of Settings.
 
+## 3.7 — Change a WC's type
+- **Change type** on every WC's page (in All): pick the new type in a window that explains what happens before you
+  confirm. Between types of the same kind it just switches. Between kinds (say a transfer that should have been a
+  residual shipment) the WC #, date, company, status, notes and documents carry over, the new kind starts fresh, and the
+  old details are kept with the WC — switch back and they return. It won't change kind while something depends on it
+  (a transfer on a claim or used as a lot # in a cancellation log, locked 198 UC entries, a certificate counted in a
+  submitted claim). Each change is recorded on the WC.
+
 ## 3.6 — Print any WC & claim transfers
 - **Print any WC**: every WC with a number has a **Print WC** button on its page and a Print link in the WC list —
   residual shipments, inventory WCs (our facility as commodity owner, each weighing of each material), CBEP generation

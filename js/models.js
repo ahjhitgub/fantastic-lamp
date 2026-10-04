@@ -3,8 +3,8 @@ window.App = window.App || {};
 
 App.Models = {
   // Bump with every build; the matching notes are in CHANGELOG.md.
-  VERSION: '3.6',
-  VERSION_NAME: 'Print any WC & claim transfers',
+  VERSION: '3.7',
+  VERSION_NAME: 'Change WC type',
 
   CEW_TYPES: ['CRT', 'NonCRT', 'CBEP'],
   CEW_TYPE_LABELS: { CRT: 'CRT', NonCRT: 'Non-CRT', CBEP: 'CBEP (Battery-Embedded)' },
