@@ -1,0 +1,77 @@
+WC	TYPE	COMPANY	DATE	IRR	STATUS	Paid	"Payment 
+Due Date"	Packet Month	Lot Canceled	NOTES
+2349	Cew transfer 	Scrap Angeles 	9.26.26		WAITING INBOUND	FALSE	9.30.26		FALSE	
+2348	cew residual shipment	FMC Metals- copper wire	9.24.26		CLAIM PACKET	FALSE			FALSE	
+2347	cew transfer only? 	Reboot Tech (combinar todo los transfers de reboot tech de Septiembre)	9.25.26		WAITING INBOUND	FALSE	9..30.26		FALSE	
+2346	cew transfer only	CMS Metals	9.25.26		WAITING INBOUND	FALSE	9..30.26		FALSE	
+2345	cew/cbep residual shipment	Goldn' West Surplus	9.25.26		CLAIM PACKET	FALSE	9..30.26		FALSE	
+2344	cew transfer	Goldn' West Surplus	9.25.26		WAITING INBOUND	FALSE	9..30.26		FALSE	
+2343	cew transfer	Sunyich Recycling	9.24.26		WAITING INBOUND	FALSE	9.29.26	September 2026	FALSE	Cancelled 9.25.26
+2342	cew/cbep shipment	SA Metals	9.24.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2341	cew transfer? (Josh a confirmar)	Got E Waste	9.24.26		WAITING INBOUND	FALSE	9.29.26	September 2026	FALSE	Cancelled 9.25.26
+2340	cew transfer	Skyline Recycling	9.24.26		WAITING INBOUND	FALSE	9.29.26	September 2026	FALSE	Cancelled 9.25.26
+2339	cew/cbep transfer 	Jake's Scrap Metal Pickup	9.23.26		DOING	FALSE	9.28.26	September 2026	FALSE	Cancelled 9.25.26
+2338	residual shipment	clean earth (lamps)	9.23.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2337	cew transfer	AV Installs	9.23.26		WAITING INBOUND	FALSE	9.28.26		FALSE	
+2336	cew transfer only	Garcia Recycling	9.23.26		WAITING ADJUSTMENTS	FALSE	9.28.26	September 2026	TRUE	Cancelled 9.23.26
+2335	Residual shipment 	Abs plastic e recycle 	9.22.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2334	non cew transfer	Extractor's Junk Hauling	9.22.26		WAITING LOGS	FALSE	9.25.26	September 2026	FALSE	Cancelled 9.25.26
+2333	cew transfer only	Reboot Tech	9.22.26		WAITING ADJUSTMENTS	FALSE	9.25.26	September 2026	TRUE	cancelled 9.23.26
+2332	cew transfer	mccoy recycling	9.22.26		DONE	FALSE	9.25.26	September 2026	TRUE	Cancelled 9.22.26
+2331	CBEP/CEW Transfer	Sanchez Moreno Valley	9.22.26		WAITING ADJUSTMENTS	FALSE	9.25.26	September 2026	TRUE	Cancelled 9.22.26
+2330	cew tranfser only	Got E Waste	9.21.26		DONE	FALSE	Paid	September 2026	TRUE	Cancelled 9.22.26
+2329	Cew transfer 	Dual entity (September 16-20)	9.21.26		WAITING INBOUND	FALSE	9.24.26		FALSE	
+2328	cew/cbep transfer 	Scrap Angeles	9.21.26		DONE	TRUE	Paid	September 2026	TRUE	Cancelled 9.21.26
+2327	cew tranfser only	Cash 4 Cans Riverside 	9.21.26		WAITING LOGS	FALSE	9.24.26	September 2026	FALSE	Cancelled 9.22.26
+2326	cew transfer only	At Your Service Installations	9.21.26		DONE	TRUE	Paid		TRUE	9.21.26
+2325	residual shipment	SA Metals	9.21.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2324	residual shipment	SA Metals	9.21.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2323	residual shipment	CR&R	9.21.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2322	CBEP only transfer 	Dual entity	9.19.26		WAITING INBOUND	FALSE			FALSE	
+2321	cew shipment	Got E Waste	9.18.26		DONE	FALSE	PO Sent 9.23.26	September 2026	FALSE	Cancelled 9.19.26
+2320	cew/cbep shipment	SA Metals	9.18.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2319	cew transfer	Goldn' West Surplus	9.18.16		WAITING LOGS	FALSE	9.23.26	September 2026	FALSE	Cancelled 9.19.26
+2318	cew/cbep residual shipment	Goldn' West Surplus	9.18.16		CLAIM PACKET	FALSE		September 2026	FALSE	
+2317	cew transfer 	oscar recycling 	9.18.16		DONE	FALSE	Josh va mandar el PO	September 2026	FALSE	Cancelled 9.18.26
+2316	cew transfer	Mojica's Recycling	9.17.26		WAITING LOGS	FALSE	9.22.26	September 2026	FALSE	Cancelled 9.18.26
+2315	residual shipment	e recycle abs plastic	916.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2314	cew transfer only? 	Got E Waste	9.16.26		DONE	TRUE	Paid	September 2026	TRUE	Cancelled 9.17.26
+2313	cew and CBEP transfer?	Happy Hauling	9.16.26		WAITING LOGS	FALSE	9.21.26	September 2026	TRUE	Cancelled 9.17.26
+2312	cew transfer only	Mega Recycling	9.16.26		WAITING LOGS	FALSE	9.21.26	September 2026	TRUE	Cancelled 9.17.26
+2311	cew transfer only	Got E Waste	9.15.26	1811	DONE	FALSE	Paid	September 2026	TRUE	Cancelled 9.16.26
+2310	cew/cbep transfer 	Garcia Recycling	9.15.26	1810	DONE	FALSE	PO sent 9.18.26	September 2026	TRUE	Cancelled 9.16.26
+2309	residual shipment	SA Metals	`9.15.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2308	cew transfer/cbep	dual entity (september 1-15)	9.15.26		WAITING INBOUND	FALSE			FALSE	
+2307	residual shipment	CR&R	9.14.26		CLAIM PACKET	FALSE		September 2026	FALSE	2 bins of trash
+2306	cew transfer	One Stop Recycling	9.14.26	1809	DOING	FALSE	9.17.26 (porfavor revisa el packing list contra nuestro cuenta)	September 2026	FALSE	3 box truck pickups. Josh told Matt we would need an extension on payment due date so we can take apart the material in-time.(Cancelled 9.14.26)
+2305	residual shipment cew/cbep	SA metals	9.11.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2304	cew/cbep transfer 	Got E Waste	9.11.26	1808	DONE	FALSE	Paid	September 2026	TRUE	Cancelled 9.12.26
+2303	cew tranfser only	Sanchez Corona	9.11.26	1807	WAITING ADJUSTMENTS	FALSE	9.16.26	September 2026	TRUE	Cancelled 9.11.26
+2302	cew transfer only	Goldn' West Surplus	9.11.26	1806	WAITING LOGS	FALSE	9.16.26	September 2026	TRUE	Cancelled 9.13.26
+2301	cew/cbep residual transfer	Goldn' West Surplus	9.11.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2300	Reboot Tech	reboot tech (this will be added to 9.7.26 shipment)	9.10.26	1798	WAITING LOGS	FALSE	9.15.26		TRUE	Cancelled 9.8.26 and 
+2299	cew/cbep transfer 	Pink recycling	9.10.26	1805	DONE	TRUE	Paid	September 2026	TRUE	Cancelled 9.11.26
+2298	cew transfer only	G Rod Anaheim	9.10.26	1804	DONE	FALSE	Paid	September 2026	TRUE	Cancelled 9.11.26
+2297	cew transfer only	G Rod Chino	9.10.26	1803	DONE	FALSE	Paid	September 2026	TRUE	Cancelled 9.11.26
+2296	residual shipment	Alpert and Alpert (Copper)	9.9.26		CLAIM PACKET	FALSE		September 2026	FALSE	
+2295	cew transfer only	Sanchez Placentia	9.9.26	1802	WAITING ADJUSTMENTS	FALSE	9.14.26	September 2026	TRUE	Cancelled 9.10.26
+2294	cew tranfser only	Got E Waste	9.9.26	1801	DONE	FALSE	Paid	September	TRUE	Cancelled 9.10.26
+2293	cew/cbep transfer 	Oscar Recycling	9.9.26	1800	DONE	FALSE	PO Sent 9.14.26	September 2026	TRUE	"Porfavor manda los extra CBEP logs a Oscar (una photo or escrito por correo)
+Cancelled 9.11.26"
+2292	cew transfer	quality paper and metals	9.8.26	1799	DONE	FALSE	PO sent 9.17.26	September 2026	TRUE	Cancelled 9.9.26
+2291	residual shipment cew/cbep	SA metals	9.8.26		CLAIM PACKET	FALSE			FALSE	
+2290	residual shipment cew/cbep 	SA metals	9.8.26		CLAIM PACKET	FALSE			FALSE	
+2289	void	Reboot Tech	9.7.26			FALSE	9.15.26	September 2026	TRUE	Cancelled 9.8.26
+2288	Residual shipment CBEP	CR&R	9.5.26		CLAIM PACKET	FALSE			FALSE	
+2287	residual shipment cew only 	CR&R	9.5.26		CLAIM PACKET	FALSE			FALSE	
+2286	residual transfer cew only 	E Recycle (ABS Plastic)	9.5.26		CLAIM PACKET	FALSE			FALSE	
+2285	cew only transfer	Golden west surplus 	9.4.26	1797	DONE	FALSE	9.10.26	September 2026	TRUE	Cancelled 9.7.26
+2284	cew only residual shipment	Goldenwest surplus	9.4.26		CLAIM PACKET	FALSE			FALSE	
+2283	cew only  transfer	oscar recycling	9.4.26	1796	DONE	FALSE	PO sent 9.8.26		FALSE	
+2282	ced    =w/cbep residual shipment	SA metals	9.4.26		CLAIM PACKET	FALSE			FALSE	
+2281	cew only transfer	Sanchez Santa Ana	9.4.26	1795	WAITING ADJUSTMENTS	FALSE	9.14.26	September 2026	TRUE	Cancelled 9.6.26. Sanchez Recycling trajo mas cajas de la compania de Santa Ana el dia 9 de Septiembre
+2280	cew  only transfer 	Got E Waste 	9.3.26	1794	DONE	TRUE	Paid	September 2026	TRUE	Cancelle 9.5.26
+2279	cew only transfer	Scrap Angeles	9.2.26	1793	DONE	FALSE	9.8.26		FALSE	
+2278	cew only transfer 	One Stop Recycling	9.2.26	1792	WAITING ADJUSTMENTS	FALSE	9.8.26	September 2026	FALSE	2 pickups(Cancelled 9.3.26)
+2277	residual shipment cew	CR&R	8.31.26		CLAIM PACKET	FALSE		August 2026	FALSE	2 bins
+2276	residual shipment cew	Progressive Scrap Metal	9.1.26		CLAIM PACKET	FALSE		September 2026	FALSE	1 bin
