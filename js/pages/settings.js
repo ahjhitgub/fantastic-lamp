@@ -63,6 +63,12 @@ App.Pages.settings = (function () {
           <div class="field-row">
             <div class="field" style="flex:2"><label>Recycler name</label><input name="recyclerName" value="${esc(data.profile.recyclerName)}"></div>
             <div class="field"><label>Recycler CEWID #</label><input name="cewID" value="${esc(data.profile.cewID)}"></div>
+            <div class="field"><label>CalRecycle claim rate — CEW Non-CRT ($/lb)</label><input name="rateNonCRT" inputmode="decimal" value="${esc((data.profile.claimRates || {}).NonCRT || '')}"></div>
+            <div class="field"><label>CalRecycle claim rate — CBEP ($/lb)</label><input name="rateCBEP" inputmode="decimal" value="${esc((data.profile.claimRates || {}).CBEP || '')}"></div>
+            <div class="field"><label>Archive transfers on claims closed more than … days ago</label><input name="archiveDays" inputmode="numeric" value="${esc(data.profile.archiveDays || 90)}"></div>
+            <div class="field"><label>Make/model weight check: flag when more than … % off</label><input name="modelTolerance" inputmode="numeric" value="${esc(data.profile.modelTolerance || 50)}"></div>
+            <div class="field"><label>… once a make/model has been seen … times</label><input name="modelMinSeen" inputmode="numeric" value="${esc(data.profile.modelMinSeen || 3)}"></div>
+            <div class="field"><label>&nbsp;</label><label class="row"><input type="checkbox" name="largeText" ${data.profile.largeText ? 'checked' : ''}> Larger text, higher contrast</label></div>
             <div class="field"><label>Federal employer identification number (FEIN)</label><input name="fein" value="${esc(data.profile.fein || '')}"></div>
             <div class="field"><label>Recycler contact <span class="muted">(CEWIS claims)</span></label><input name="recyclerContact" value="${esc(data.profile.recyclerContact || '')}"></div>
             <div class="field"><label>Phone</label><input name="phone" value="${esc(data.profile.phone)}"></div>
@@ -84,6 +90,9 @@ App.Pages.settings = (function () {
         const fd = new FormData(prof);
         await App.DB.put('facilityProfile', { ...data.profile, id: 'profile', recyclerName: String(fd.get('recyclerName')).trim(), cewID: String(fd.get('cewID')).trim(), fein: String(fd.get('fein') || '').trim(), recyclerContact: String(fd.get('recyclerContact') || '').trim(),
           phone: String(fd.get('phone') || '').trim(), address: String(fd.get('address') || '').trim(),
+          claimRates: { NonCRT: String(fd.get('rateNonCRT') || '').trim(), CBEP: String(fd.get('rateCBEP') || '').trim() },
+          archiveDays: Number(fd.get('archiveDays')) || 90, modelMinSeen: Number(fd.get('modelMinSeen')) || 3, modelTolerance: Number(fd.get('modelTolerance')) || 50,
+          largeText: fd.get('largeText') === 'on',
           dualEntity: fd.get('dualEntity') === 'on', form198ContactName: String(fd.get('form198ContactName') || '').trim(), form198ContactPhone: String(fd.get('form198ContactPhone') || '').trim(),
           vehicles: App.Logic.splitPlates(fd.get('vehicles')),
           wcSigners: [...new Set(String(fd.get('wcSigners') || '').split(/\n+/).map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean))],
@@ -186,18 +195,58 @@ App.Pages.settings = (function () {
         },
       }));
 
+      // ---- recycle bin (30 days)
+      const bin = await App.Store.trash();
+      const binEl = h(`<div class="panel"><h2>Recycle bin</h2>
+        <p class="hint mt-0">Deleted WCs, companies and attachments stay here for 30 days.</p>
+        ${bin.length ? `<table class="compact" data-list="trash"><thead><tr><th>What</th><th>Kind</th><th>Deleted</th><th></th></tr></thead><tbody>${bin.map((x) => `<tr><td>${esc(x.label)}</td><td>${esc({ wc: 'WC', company: 'Company', attachment: 'Attachment' }[x.kind] || x.kind)}</td>
+          <td>${esc(new Date(x.deletedAt).toLocaleString())}</td><td><button type="button" class="small" data-restore="${x.id}">Restore</button></td></tr>`).join('')}</tbody></table>` : '<p class="muted">Empty.</p>'}</div>`);
+      binEl.querySelectorAll('[data-restore]').forEach((b) => b.addEventListener('click', async () => {
+        try { const it = await App.Store.restoreFromTrash(Number(b.dataset.restore)); msg = { kind: 'ok', text: `Restored ${it.label}.` }; } catch (e) { msg = { kind: 'error', text: App.UI.errText(e) }; }
+        App.rerender();
+      }));
+      container.append(binEl);
+
+      // ---- usual weights by make & model (learned from cancellation logs)
+      const allUnits = await App.DB.getAll('cancelledUnits');
+      const excl = ((await App.DB.get('meta', 'modelExclusions')) || { ids: [] }).ids;
+      const wmap = App.Logic.modelWeights(allUnits, excl);
+      const opt = { minSeen: data.profile.modelMinSeen || 3, tolerance: (data.profile.modelTolerance || 50) / 100 };
+      const flagged = allUnits.filter((u) => !excl.includes(u.id) && App.Logic.modelWeightFlag(u, wmap, opt)).slice(0, 60);
+      const top = [...wmap].filter(([, v]) => v.n >= opt.minSeen).sort((a, b) => b[1].n - a[1].n).slice(0, 80);
+      const uw = h(`<div class="panel"><h2>Usual weights by make & model</h2>
+        <p class="hint mt-0">Learned from your cancellation logs (CBEP by device); entries far off a model's usual weight are flagged on import and in the log. Bulk entries don't count.</p>
+        ${flagged.length ? `<h3>Flagged entries</h3><table class="compact" data-list="model-flags"><thead><tr><th>Date</th><th>Make / model / device</th><th class="num">Weight</th><th class="num">Usual</th><th></th></tr></thead><tbody>${flagged.map((u) => { const f = App.Logic.modelWeightFlag(u, wmap, opt);
+          return `<tr><td>${esc(u.date)}</td><td>${esc(u.device || `${u.make} ${u.model}`)}</td><td class="num">${esc(u.weight)}</td><td class="num">${esc(f.usual)} (${f.n} seen)</td><td><button type="button" class="small" data-excl="${u.id}">Don't learn from this</button></td></tr>`; }).join('')}</tbody></table>` : ''}
+        ${top.length ? `<details><summary>${top.length} makes/models learned</summary><table class="compact"><thead><tr><th>Make / model / device</th><th class="num">Usual lbs</th><th class="num">Seen</th></tr></thead><tbody>${top.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${v.median}</td><td class="num">${v.n}</td></tr>`).join('')}</tbody></table></details>` : '<p class="muted">Nothing learned yet.</p>'}</div>`);
+      uw.querySelectorAll('[data-excl]').forEach((b) => b.addEventListener('click', async () => {
+        await App.DB.put('meta', { key: 'modelExclusions', ids: [...excl, Number(b.dataset.excl)] }); msg = { kind: 'ok', text: 'That entry no longer counts toward its usual weight.' }; App.rerender();
+      }));
+      container.append(uw);
+
       // ---- backup
       const backup = h(`
         <div class="panel">
           <h2>Backup</h2>
           <p class="muted mt-0">Everything lives only in this browser. Download a backup regularly — it includes attached files.</p>
-          <div class="row"><button type="button" class="primary" data-a="download">Download backup</button></div>
+          <div class="row"><button type="button" class="primary" data-a="download">Download backup</button>
+            <button type="button" data-a="folder">Choose a folder for automatic backups</button><span class="muted" data-role="last"></span></div>
           <div class="field-row">
             <div class="field" style="flex:2"><label>Restore from a backup file (replaces everything)</label><input type="file" accept=".json,application/json" data-f="file"></div>
             <div class="field"><label>&nbsp;</label><button type="button" data-a="restore">Restore</button></div>
           </div>
         </div>`);
-      backup.querySelector('[data-a="download"]').addEventListener('click', () => App.Backup.downloadBackup());
+      backup.querySelector('[data-a="download"]').addEventListener('click', async () => { await App.Backup.downloadBackup(); App.rerender(); });
+      (async () => {
+        const last = await App.Backup.lastBackup(); const f = await App.Backup.folder();
+        backup.querySelector('[data-role="last"]').textContent = `${last ? `Last backup: ${new Date(last.at).toLocaleString()}` : 'No backup yet'}${f ? ` · automatic backups go to the folder "${f.name}" once a day` : ''}`;
+      })();
+      const fb = backup.querySelector('[data-a="folder"]');
+      if (!App.Backup.folderSupported()) { fb.disabled = true; fb.title = 'Automatic folder backups need Chrome or Edge.'; }
+      fb.addEventListener('click', async () => {
+        try { const name = await App.Backup.chooseFolder(); msg = { kind: 'ok', text: `Backed up to "${name}" — from now on, once a day while the app is open.` }; } catch (e) { if (e && e.name === 'AbortError') return; msg = { kind: 'error', text: App.UI.errText(e) }; }
+        App.rerender();
+      });
       backup.querySelector('[data-a="restore"]').addEventListener('click', async () => {
         const file = backup.querySelector('[data-f="file"]').files[0];
         if (!file) return;

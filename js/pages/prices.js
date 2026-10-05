@@ -4,6 +4,7 @@ App.Pages = App.Pages || {};
 /** Master price list: drop-off and pick-up rates, or "variable" (set at inspection). */
 App.Pages.prices = (function () {
   let msg = null;
+  let effectiveFrom = '';   // when changed rates start (rate history)
 
   function rowHtml(p) {
     const { esc, options } = App.UI;
@@ -44,6 +45,10 @@ App.Pages.prices = (function () {
       container.append(App.UI.header('Price List', 'What we pay customers for CEW units — and charge them for non-CEW units — by drop-off or pick-up. A customer\u2019s own rate (Companies page) overrides this; a rate typed on a transfer at inspection overrides both.'));
       if (msg) { container.append(App.UI.notice(msg.text, msg.kind)); msg = null; }
 
+      const eff = h(`<div class="panel row"><label class="row"><strong>New rates take effect from</strong> <input type="date" data-a="eff" value="${esc(effectiveFrom || App.UI.today())}"></label>
+        <span class="muted">Transfers before this date keep the rates in effect on their own date.</span></div>`);
+      eff.querySelector('[data-a="eff"]').addEventListener('change', (e) => { effectiveFrom = e.target.value; });
+      container.append(eff);
       const table = h(`
         <div class="panel">
           <h2>Master price list</h2>
@@ -62,7 +67,8 @@ App.Pages.prices = (function () {
           const rec = read(tr);
           const err = validate(rec, data.priceItems, p.id);
           if (err) { if (App.UI.batching) { App.UI.batchNote(err, 'error'); return; } msg = { kind: 'error', text: err }; App.rerender(); return; }
-          await App.DB.put('priceItems', { ...p, ...rec });
+          // rate history: the old rates stay in effect for transfers before the "effective from" date
+          await App.DB.put('priceItems', App.Logic.withNewRates(p, rec, effectiveFrom || App.UI.today()));
           App.Pages.wc.reset();
           if (App.UI.batching) return;
           msg = { kind: 'ok', text: `Saved ${rec.name}.` };

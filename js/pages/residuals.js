@@ -51,7 +51,7 @@ App.Pages.residuals = (function () {
               ${active ? `<option value="general">End-of-month inventory — general entry (no WC)</option>
               <option value="invwc">Inventory — weight certificate (LCD lamps need one of their own)</option>` : '<option value="ship">Residual shipment (WC)</option>'}
             </select></div>
-            <div class="field" data-role="wc-field"><label>WC #</label><input name="wcNumber" value="${esc(L.nextWcNumber(data.wcs))}"></div>
+            <div class="field" data-role="wc-field"><label>WC #</label><input name="wcNumber" value="${esc(L.nextWcNumber(data.allWcs))}"></div>
             <div class="field" style="flex:2" data-role="party-field"><label>Going to</label><select name="party">${App.Store.partyOptions('shipment', data.companies, '')}</select></div>
             <div class="field"><label>Date</label><input type="date" name="date" value="${App.UI.today().slice(0, 7) === key ? App.UI.today() : L.lastDayISO(year, month)}"></div>
             <div class="field"><label>&nbsp;</label><button type="submit" class="primary">Create and open</button></div>

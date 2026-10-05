@@ -706,3 +706,51 @@ dialog.confirm-dialog::backdrop { background: rgba(30, 58, 47, .35); }
 dialog.confirm-dialog h2 { font-family: var(--font-display); font-size: 21px; margin: 0 0 12px; color: var(--canopy); }
 dialog.confirm-dialog .dlg-body { margin-bottom: 16px; }
 .print-row { margin: -8px 0 14px; }
+
+/* 3.8 — the folded menu (narrower windows) sits on a light panel: dark links there */
+@media (max-width: 1279px) {
+  .topnav a.nav-link, .topnav .menu > summary { color: var(--ink); border-radius: 10px; }
+  .topnav a.nav-link:hover, .topnav .menu > summary:hover { background: var(--surface-2); color: var(--canopy); }
+  .topnav a.nav-link.active, .topnav .menu.active > summary { background: var(--accent-soft); color: var(--accent-strong); }
+  .topnav .menu { margin-left: 0; }
+}
+/* the Setup menu sits at the right edge: its dropdown opens leftward, inside the window */
+@media (min-width: 1280px) {
+  .topnav .menu > .menu-pop { left: auto; right: 0; max-width: calc(100vw - 24px); }
+}
+
+/* VOID */
+.void-banner { font-size: 14px; }
+.doc-sheet.is-void { position: relative; }
+.doc-sheet.is-void::after { content: 'VOID'; position: absolute; left: 0; right: 0; top: 34%; text-align: center; font: 800 130px/1 Arial, sans-serif;
+  color: rgba(194, 65, 12, .22); transform: rotate(-18deg); pointer-events: none; letter-spacing: .08em; }
+@media print { .doc-sheet.is-void::after { color: rgba(194, 65, 12, .28); } }
+
+/* 4.0 */
+body.large-text { font-size: 17px; --muted: #3F5446; --ink-soft: #2C4436; }
+body.large-text .panel, body.large-text td, body.large-text th, body.large-text input, body.large-text select, body.large-text button { font-size: 16px; }
+body.large-text .hint, body.large-text .muted { color: #3F5446; }
+.two-tabs { position: sticky; top: 0; z-index: 100; margin: 0; border-radius: 0; }
+.board { display: grid; grid-template-columns: repeat(6, minmax(170px, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 8px; }
+.board-col { background: var(--surface-2); border: 1px solid var(--line); border-radius: 16px; padding: 10px; min-height: 120px; }
+.board-col h3 { font-family: var(--font-display); font-size: 15px; margin: 2px 4px 10px; color: var(--canopy); }
+.board-card { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; margin-bottom: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; color: var(--ink); text-decoration: none; }
+.board-card:hover { border-color: var(--verdigris); }
+.board-card .badge { align-self: flex-start; }
+.batch-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 10px; background: #FDF7E3; border: 1px solid #EBCB67; border-radius: 12px; }
+.batch-bar[hidden] { display: none; }
+@media print { .batch-print .batch-sheet { break-after: page; page-break-after: always; } }
+.search-box { position: relative; flex: 0 1 300px; margin: 0 8px; }
+.search-box input { width: 100%; border-radius: 999px; border: 1px solid rgba(237, 242, 227, .25); background: rgba(237, 242, 227, .12); color: #fff; padding: 7px 14px; }
+.search-box input::placeholder { color: rgba(237, 242, 227, .7); }
+.search-box input:focus { background: #fff; color: var(--ink); }
+.search-results { position: absolute; top: calc(100% + 6px); left: 0; width: min(520px, 92vw); max-height: 60vh; overflow: auto; z-index: 70; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-pop); padding: 6px; }
+.search-results[hidden] { display: none; }
+.search-hit { display: block; padding: 8px 10px; border-radius: 10px; color: var(--ink); text-decoration: none; }
+.search-hit:hover { background: var(--surface-2); }
+.search-none { padding: 10px; }
+.help-btn { border-radius: 50%; width: 28px; height: 28px; padding: 0; font-weight: 700; margin-left: 10px; }
+.help-text p, .help-text ol { margin: 0 0 10px; }
+ol.close-steps { margin: 6px 0 0 18px; padding: 0; } ol.close-steps li { margin: 6px 0; }
+ol.close-steps li.done { color: var(--muted); }
+@media (max-width: 1279px) { .search-box { flex: 1 1 160px; } }

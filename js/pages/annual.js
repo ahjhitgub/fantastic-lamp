@@ -37,13 +37,14 @@ App.Pages.annual = (function () {
       const transfers = data.wcs.filter((w) => w.kind === 'transfer').map((wc) => {
         const P = App.Store.transferParties(wc, data);
         return { wc, customer: P.customer ? P.customer.name : P.selfCollected ? 'Dual Entity' : '—',
-          invoice: L().invoiceMath({ transfer: wc.transfer, mode: wc.transfer.mode, priceItems: data.priceItems, company: P.customer }) };
+          invoice: wc.transfer.selfCollected ? null : L().invoiceMath({ date: wc.date, transfer: wc.transfer, mode: wc.transfer.mode, priceItems: data.priceItems, company: P.customer }) };   // Dual Entity: nothing paid
       });
       const shipments = data.wcs.filter((w) => w.kind === 'shipment' || w.kind === 'crtShipment');
       const years = new Set([new Date().getFullYear()]);
       [...data.wcs.map((w) => w.date), ...sales.map((x) => x.date)].forEach((d) => { if (/^\d{4}/.test(d || '')) years.add(Number(d.slice(0, 4))); });
       data.periods.forEach((p) => years.add(Number(p.year)));
-      const S = L().annualSummary({ year, transfers, shipments, periods: data.periods, otherSales: sales, materials: data.materials, companyName });
+      const periodsReq = data.periods.map((p) => ({ ...p, requestedAmount: L().parseMoney(p.requestedAmount) !== null ? p.requestedAmount : (L().claimAmount(p, data.allocations, data.profile.claimRates) ?? '') }));
+      const S = L().annualSummary({ year, transfers, shipments, periods: periodsReq, otherSales: sales, materials: data.materials, companyName });
 
       container.append(App.UI.header('Annual Summary', 'One calendar year, January to December. Each item counts in the year of its own date: transfers when received, invoices by their PO date, shipments when shipped, claims by their claim month.'));
       if (msg) { container.append(App.UI.notice(msg.text, msg.kind)); msg = null; }
@@ -129,6 +130,18 @@ App.Pages.annual = (function () {
         App.rerender();
       }));
       container.append(salesEl);
+
+      // ---- margin: what each transfer should bring from CalRecycle less what we paid for it
+      const rates = data.profile.claimRates || {};
+      const inYear = transfers.filter((x) => String(x.wc.date || '').slice(0, 4) === String(year) && !x.wc.transfer.selfCollected && !x.wc.voided)
+        .map((x) => ({ ...x, mg: L().transferMargin({ wc: x.wc, invoice: x.invoice, rates }) }));
+      const roll = (key) => { const m = new Map(); inYear.forEach((x) => { const k = key(x); const a = m.get(k) || { paid: 0, expected: 0, unknown: false, n: 0 }; a.paid += x.mg.paid; if (x.mg.expected === null) a.unknown = true; else a.expected += x.mg.expected; a.n += 1; m.set(k, a); }); return [...m]; };
+      const row = ([k, a]) => `<tr><td>${esc(k)}</td><td class="num">${a.n}</td><td class="num">${L().money(a.paid)}</td><td class="num">${a.unknown ? '—' : L().money(a.expected)}</td><td class="num ${!a.unknown && a.expected - a.paid < 0 ? 'flag-text' : ''}">${a.unknown ? '—' : L().money(a.expected - a.paid)}</td></tr>`;
+      const head = '<thead><tr><th></th><th class="num">Transfers</th><th class="num">Paid for material</th><th class="num">Expected claim $</th><th class="num">Margin</th></tr></thead>';
+      container.append(h(`<div class="panel"><h2>Margin</h2>
+        <p class="hint mt-0">Expected claim $ = each transfer's claimable pounds × the CalRecycle claim rate (Settings)${rates.NonCRT || rates.CBEP ? '' : ' — set the rates in Settings to see it'}. Dual Entity transfers are left out.</p>
+        ${inYear.length ? `<h3>By month</h3><table class="compact" data-list="margin-month">${head}<tbody>${roll((x) => L().monthLabel(Number(x.wc.date.slice(0, 4)), Number(x.wc.date.slice(5, 7)))).map(row).join('')}</tbody></table>
+          <h3>By customer</h3><table class="compact" data-list="margin-customer">${head}<tbody>${roll((x) => x.customer).sort((a, b) => b[1].paid - a[1].paid).map(row).join('')}</tbody></table>` : '<p class="muted">No transfers this year.</p>'}</div>`));
     },
   };
 }());

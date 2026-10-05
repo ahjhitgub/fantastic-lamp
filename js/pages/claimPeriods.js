@@ -85,6 +85,7 @@ App.Pages.claimPeriods = (function () {
       </div>
       <div class="field-row">
         <div class="field"><label>Payment requested $ <span class="muted">(the claim)</span></label><input name="requestedAmount" type="text" inputmode="decimal" value="${p.requestedAmount ?? ''}"></div>
+        <div class="field"><label>Submit by</label><input type="date" name="dueDate" value="${p.dueDate || ''}"></div>
         <div class="field"><label>Payment received $ <span class="muted">(from CalRecycle)</span></label><input name="receivedAmount" type="text" inputmode="decimal" value="${p.receivedAmount ?? ''}"></div>
         <div class="field"><label>Date received</label><input name="paidDate" type="date" value="${p.paidDate || ''}"></div>
       </div>
@@ -129,6 +130,7 @@ App.Pages.claimPeriods = (function () {
         previousPeriodId: fd.get('previousPeriodId') ? Number(fd.get('previousPeriodId')) : null,
         notes: fd.get('notes') || '',
         requestedAmount: String(fd.get('requestedAmount') || '').trim(),
+        dueDate: String(fd.get('dueDate') || ''),
         receivedAmount: String(fd.get('receivedAmount') || '').trim(),
         paidDate: fd.get('paidDate') || '',
       };

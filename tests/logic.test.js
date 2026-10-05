@@ -250,7 +250,7 @@ test('IRR # is its own sequence on transfers', () => {
 test('residuals count only CEW shipment lines; inventory rules for LCD lamps', () => {
   const mats = [{ id: 1, name: 'Steel', category: 'Non-Copper Metals' }, { id: 2, name: 'LCD Lamps', category: 'LCD Lamps (§IV)', ownWc: true }];
   const wcs = [
-    { kind: 'shipment', date: '2026-08-10', shipment: { lines: [{ materialId: 1, net: 1000, cew: true }, { materialId: 1, net: 300, cew: false }, { materialId: 1, net: 50 }] } },
+    { kind: 'shipment', date: '2026-08-10', shipment: { lines: [{ materialId: 1, net: 1000 }, { materialId: null, net: 300 }, { materialId: 1, net: 50 }] } },
     { kind: 'inventory', noWc: true, date: '2026-08-31', inventory: { forMonth: '2026-08', lines: [{ materialId: 1, net: 200 }, { materialId: 1, gross: 150, tare: 20, net: '' }] } },
   ];
   const s = L.residualSummary({ year: 2026, month: 8, materials: mats, wcs });
@@ -800,4 +800,70 @@ test('v3.5: CEW Non-CRT and CBEP residuals never combine, even with the same nam
   assert.match(L.shipmentIssues({ shipment: { shipmentType: 'cbep', lines: [{ materialId: 1, net: 5 }, { materialId: 2, net: 5 }], paperwork: { destination: 'recycling', bol: 'x', materialFlow: 'y' } } }, mats).map((x) => x.text).join(' '), /CEW Non-CRT Circuit Boards is a CEW Non-CRT residual/);
   assert.match(L.shipmentIssues({ shipment: { shipmentType: 'cew', lines: [{ materialId: 3, net: 5 }] } }, mats)[0].text, /CBEP Power Boards is a CBEP residual/);
   assert.equal(L.residual196C(mats[0]), L.NOT_CBEP);
+});
+
+// ---------- 4.0 streamlining ----------
+test('rate history: old transfers keep the rates in effect on their date', () => {
+  let item = { id: 1, appliesTo: 'cew:lcdled', name: 'CEW LCD/LED', basis: 'lb', dropOff: '0.30', pickUp: '0.20', direction: 'pay' };
+  item = L.withNewRates(item, { dropOff: '0.35' }, '2026-09-01');
+  assert.deepEqual([item.dropOff, item.since, item.history[0].dropOff], ['0.35', '2026-09-01', '0.30']);
+  assert.equal(L.rateOn(item, '2026-08-20').dropOff, '0.30');
+  assert.equal(L.rateOn(item, '2026-09-02').dropOff, '0.35');
+  const t = { lines: [{ category: 'lcdled', irrUnits: 10, irrGross: 100, irrTare: 0, irrWeight: 100, cewUnits: 10 }] };
+  assert.equal(L.invoiceMath({ transfer: t, mode: 'dropoff', priceItems: [item], company: null, date: '2026-08-20' }).finalBalance, 30);
+  assert.equal(L.invoiceMath({ transfer: t, mode: 'dropoff', priceItems: [item], company: null, date: '2026-09-20' }).finalBalance, 35);
+  assert.equal(L.withNewRates(item, { dropOff: '0.35' }, '2026-10-01').history.length, 1);   // unchanged: no new history
+});
+
+test('weight checks: pounds per unit by kind, and make/model usual weights', () => {
+  const wcs = Array.from({ length: 9 }, (_, i) => ({ kind: 'transfer', transfer: { lines: [{ category: 'lcdled', irrUnits: 10, irrWeight: 250 + i }] } }));
+  const norms = L.unitWeightNorms(wcs);
+  assert.equal(norms.lcdled.n, 9);
+  assert.match(L.unitWeightIssues({ lines: [{ category: 'lcdled', irrUnits: 10, irrWeight: 2500 }] }, norms)[0], /250 lbs per unit — usually about 25/);
+  assert.equal(L.unitWeightIssues({ lines: [{ category: 'lcdled', irrUnits: 10, irrWeight: 300 }] }, norms).length, 0);
+  const units = [25, 24, 26, 25].map((w, i) => ({ id: i + 1, make: 'Samsung', model: 'S24', weight: w })).concat([{ id: 9, make: 'Samsung', model: 'S24', weight: 70 }]);
+  const map = L.modelWeights(units);
+  assert.deepEqual(L.modelWeightFlag(units[4], map), { usual: 25, n: 5 });
+  assert.equal(L.modelWeightFlag(units[0], map), null);
+  assert.equal(L.modelWeightFlag({ device: 'Computer Tower', weight: 70 }, L.modelWeights([{ id: 1, device: 'Computer Tower', weight: 20 }, { id: 2, device: 'Computer Tower', weight: 22 }])), null); // too few seen
+  assert.equal(L.modelWeights(units, [9]).get(L.modelKey(units[0])).n, 4);   // an excluded entry doesn't teach
+});
+
+test('3 calendar days from all paperwork to close and pay; Dual Entity is never due', () => {
+  const w = (tl, extra = {}) => ({ kind: 'transfer', transfer: { timeline: tl, ...extra } });
+  assert.equal(L.paymentDue(w({ sourceLogsReceived: '2026-09-04' }), '2026-09-05'), null);             // no signed 197 yet
+  const d = L.paymentDue(w({ sourceLogsReceived: '2026-09-04', form197Signed: '2026-09-05' }), '2026-09-07');
+  assert.deepEqual([d.paperwork, d.due, d.status], ['2026-09-05', '2026-09-08', 'due-tomorrow']);       // Sat/Sun count
+  assert.equal(L.paymentDue(w({ sourceLogsReceived: '2026-09-04', form197Signed: '2026-09-05' }), '2026-09-09').status, 'overdue');
+  assert.equal(L.paymentDue(w({ sourceLogsReceived: '2026-09-04', customerAdjustments: '2026-09-10', form197Signed: '2026-09-05' }), '2026-09-11').due, '2026-09-13');
+  assert.equal(L.paymentDue(w({ allPaperwork: '2026-09-01', paid: '2026-09-03' }), '2026-09-20').status, 'paid');
+  assert.equal(L.paymentDue(w({ allPaperwork: '2026-09-01' }, { selfCollected: true }), '2026-09-20'), null);
+});
+
+test('claim amount, double claims, early cancellations, margin, archive, search', () => {
+  const allocs = [{ wcId: 1, claimPeriodId: 7, units: 10, weight: 1000 }];
+  assert.equal(L.claimAmount({ id: 7, cewType: 'NonCRT' }, allocs, { NonCRT: '0.30' }), 300);
+  assert.equal(L.requestedFor({ id: 7, cewType: 'NonCRT', requestedAmount: '290' }, allocs, { NonCRT: '0.30' }), 290);
+  const t = (id, n, rows, date = '2026-09-02') => ({ id, kind: 'transfer', wcNumber: n, date, transfer: { logs: { o: { rows } }, timeline: {}, lines: [] } });
+  const a = t(1, '100', [{ name: 'Ann Lee', address: '1 Main St' }]); const b = t(2, '101', [{ name: 'ann lee', address: '1 Main St.' }, { name: 'Bo', address: '2 Elm' }]);
+  const dup = L.sourceDuplicates([a, b]);
+  assert.deepEqual([dup.length, dup[0].transfers.map((x) => x.wcNumber)], [1, ['100', '101']]);
+  assert.deepEqual(L.cancelledEarly([{ lotNumber: '100', date: '2026-09-01' }, { lotNumber: '100', date: '2026-09-03' }], [a]).map((u) => u.date), ['2026-09-01']);
+  const wc = { transfer: { lines: [{ category: 'lcdled', irrUnits: 10, irrGross: 300, irrTare: 0, irrWeight: 300, cewUnits: 10, cewWeight: 300 }] } };
+  assert.deepEqual(L.transferMargin({ wc, invoice: { finalBalance: 60 }, rates: { NonCRT: '0.30' } }), { expected: 90, paid: 60, margin: 30 });
+  assert.equal(L.transferMargin({ wc, invoice: { finalBalance: 60 }, rates: {} }).margin, null);
+  const w = { id: 5, kind: 'transfer', transfer: wc.transfer };
+  const periods = [{ id: 7, cewType: 'NonCRT', closedDate: '2026-01-10' }];
+  assert.equal(L.isArchived(w, [{ wcId: 5, claimPeriodId: 7, units: 10, weight: 300 }], periods, '2026-09-01'), true);
+  assert.equal(L.isArchived(w, [{ wcId: 5, claimPeriodId: 7, units: 5, weight: 150 }], periods, '2026-09-01'), false);   // not fully claimed
+  const idx = L.searchIndex({ allWcs: [a, b], companies: [{ id: 3, name: 'Got E Waste', roles: ['handler'] }] });
+  assert.deepEqual(L.search(idx, 'ann lee').map((x) => x.sub.split(' · ').pop()), ['WC #100', 'WC #101']);
+  assert.equal(L.search(idx, 'got e')[0].kind, 'Company');
+});
+
+test('rate history: a first rate is just set (older transfers aren\'t left without one)', () => {
+  const blank = { id: 2, name: 'CEW CRT', dropOff: '', pickUp: '' };
+  const first = L.withNewRates(blank, { dropOff: '0.10' }, '2026-09-01');
+  assert.equal(first.since, undefined); assert.equal((first.history || []).length, 0);
+  assert.equal(L.rateOn(first, '2026-01-01').dropOff, '0.10');
 });

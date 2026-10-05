@@ -135,6 +135,10 @@ async function route() {
       fresh.querySelectorAll('[data-all-only]').forEach((el) => { el.replaceWith(App.UI.h('<p class="muted all-only-note">New WCs (inventory checks, shipments) are made in <strong>All — no claim period</strong>.</p>')); });
     }
     App.UI.enhancePanels(fresh, pageId);
+    if (pageId === 'doc') {   // a voided WC prints with VOID across it
+      const w = await App.DB.get('wcs', Number(App.State.routeParams[0])).catch(() => null);
+      if (w && w.voided) fresh.querySelectorAll('.doc-sheet').forEach((el) => el.classList.add('is-void'));
+    }
   } catch (err) {
     console.error(err);
     fresh.replaceChildren(App.UI.notice(`This page hit an error: ${App.UI.errText(err)}`, 'error'));
@@ -145,6 +149,8 @@ async function route() {
 
 App.rerender = async function rerender() {
   await renderPeriodSwitcher();
+  const prof = await App.DB.get('facilityProfile', 'profile').catch(() => null);
+  document.body.classList.toggle('large-text', !!(prof && prof.largeText));
   // CRT & plasma has nothing to do with a CBEP claim: off the bar while one is selected
   const cur = App.State.currentPeriodId ? await App.DB.get('claimPeriods', App.State.currentPeriodId) : null;
   document.querySelectorAll('[data-page-id="crtplasma"]').forEach((el) => { el.hidden = !!(cur && cur.cewType === 'CBEP'); });
@@ -177,6 +183,34 @@ async function init() {
     return;
   }
   try { App.State.currentPeriodId = Number(localStorage.getItem(PERIOD_KEY)) || null; } catch (e) { /* ignore */ }
+  // two tabs on the same data can overwrite each other's saves: warn
+  try {
+    const ch = new BroadcastChannel('calrecycle-tracker'); const me = Math.random().toString(36).slice(2);
+    ch.onmessage = (e) => {
+      if (e.data && e.data.hello && e.data.from !== me) ch.postMessage({ here: true, from: me });
+      if (e.data && (e.data.here || e.data.hello) && e.data.from !== me && !document.getElementById('two-tabs')) {
+        document.body.prepend(App.UI.h('<div id="two-tabs" class="notice warning two-tabs"><strong>The app is open in another tab or window.</strong> Saving in both can overwrite each other — close one of them.</div>'));
+      }
+    };
+    ch.postMessage({ hello: true, from: me });
+  } catch (e) { /* no BroadcastChannel */ }
+  App.Backup.autoBackup();
+  // search everything from the top bar
+  {
+    const box = document.getElementById('global-search'); const out = document.getElementById('search-results');
+    let index = null;
+    const show = () => {
+      const hits = App.Logic.search(index || [], box.value);
+      out.hidden = !box.value.trim();
+      out.innerHTML = hits.length ? hits.map((x) => `<a href="${x.href}" class="search-hit"><span class="badge">${App.UI.esc(x.kind)}</span> <strong>${App.UI.esc(x.label)}</strong> <span class="muted">${App.UI.esc(x.sub || '')}</span></a>`).join('') : '<div class="muted search-none">Nothing found.</div>';
+    };
+    box.addEventListener('focus', async () => { index = App.Logic.searchIndex(await App.Store.loadAll()); show(); });
+    box.addEventListener('input', show);
+    out.addEventListener('click', (e) => { if (e.target.closest('a')) { out.hidden = true; box.value = ''; box.blur(); } });
+    box.addEventListener('keydown', (e) => { if (e.key === 'Escape') { out.hidden = true; box.blur(); } if (e.key === 'Enter') { const a = out.querySelector('a'); if (a) { location.hash = a.getAttribute('href'); out.hidden = true; box.value = ''; } } });
+    document.addEventListener('click', (e) => { if (!e.target.closest('.search-box')) out.hidden = true; });
+  }
+  App.Store.purgeTrash();
   document.getElementById('period-select').addEventListener('change', (e) => {
     App.setPeriod(e.target.value ? Number(e.target.value) : null);
     App.rerender();

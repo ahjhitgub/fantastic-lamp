@@ -2,6 +2,71 @@
 
 Each build gets a version number. It shows in the top bar under the app name (on wide screens) and at the top of Settings.
 
+## 4.0 — Streamlining
+**Safety**
+- **Backups**: a reminder on the Dashboard when the last backup is over a week old (or there's none), with **Back up now**;
+  and **automatic daily backups** into a folder you choose in Settings (Chrome / Edge — the browser asks for permission
+  again each visit, one click). Settings shows when the last backup was.
+- **Recycle bin**: deleted WCs (with their allocations and attachments), companies and attachments stay 30 days —
+  Settings → Recycle bin → Restore.
+- **Two-tab warning** when the app is open in two tabs or windows (saves could overwrite each other).
+- **Edit history** on every WC: what changed on each save, and when.
+
+**Transfers**
+- **3 calendar days to close and pay**: two new timeline steps, **All paperwork received** (filled in by itself once the
+  198 — the A if adjustments were needed — and the signed 197 are in) and **Customer paid**. The due date shows in the
+  Transfers list (**Pay by**), with warnings on the Dashboard the day before, on the day and once overdue. Not for Dual
+  Entity transfers.
+- **Dual Entity** transfers drop what doesn't apply: no IRR # (one already given stays), no pricing or purchase invoice,
+  always drop off, no IRR or invoice documents, and they're left out of "paid for material".
+- **Board view** (Transfers → Show as Board): Received → Logs in → Adjustments → Paperwork complete → Paid → Claimed.
+- **Unpaid purchase invoices**, oldest first, on the Transfers page; **customer statements** (Companies → Statement)
+  for any date range.
+- **New transfers start like the customer's last one** (type, drop off / pick up, line kinds) — untick to start blank.
+- **Faster 198 typing**: names from that customer's earlier 198s are suggested and fill in the address, contact and type;
+  ⧉ copies an entry; Enter moves down a column and adds a row at the end.
+- **Adjustment requests**: on the 198 O, **Draft adjustment request** writes the email listing what needs fixing (copy it
+  or open it in your mail app); mark it requested to see how long you've been waiting.
+- **Weight checks**: pounds per unit far off the usual for that kind (learned from your transfers) are flagged on the IRR
+  lines; cancellation log entries far off a make & model's usual weight (learned from your logs; CBEP by device) are
+  flagged — Settings → Usual weights shows what's learned and lets you leave a bad entry out. Lines cancelled before
+  their transfer came in are flagged.
+- **Rate history**: price changes take effect from a date you pick; older transfers keep the rates of their own date.
+- **Photos from a phone**: 📷 Take a photo when attaching documents.
+
+**Claims**
+- **Close the month** on Claim forms: every step in order with a link to whatever isn't done — transfers on the claim,
+  198s and strikes, cancellation log and pounds, audit, month-end residuals, no source on two transfers' 198s, the
+  packet, submitted.
+- **Claim packet**: one PDF — the 197S, then each transfer's Merged File in order, then the CBEP checklist.
+- **Claim amount worked out**: set CalRecycle's claim rates in Settings and the payment requested is claimed pounds ×
+  the rate (a typed amount still wins). **Submit by** date on each claim period.
+- **Coming up** on the Dashboard: payments due, claims to submit, 30-day reviews, 198 As you're waiting on.
+- **Margin** on the Annual Summary, by month and by customer: expected claim payments against what you paid.
+
+**Everywhere**
+- **Customers / Vendors** tabs on Companies (and No role yet); companies with both roles show in both.
+- **Search** from the top bar: WC #, IRR #, company, or a source's name or address on any 198.
+- **Batch actions** on the WC list: tick WCs to set a status or print them together.
+- **Export CSV** on every list (opens in Excel). **End-of-day sheet** on the Dashboard. **?** help on every page.
+- **Archive**: transfers fully claimed on claims closed over 90 days ago (Settings) leave the everyday lists — "Show
+  archived" brings them back.
+- **Larger text, higher contrast** option in Settings.
+- Not in this version: reading typed scans (text recognition) — for when the app moves online.
+
+## 3.8 — Voiding WCs & tidier shipment lines
+- **Void WC** on each WC's page (in All): after a confirmation (with an optional reason) the WC keeps its number and
+  details but shows VOID everywhere, prints with VOID across it, and counts in no total, claim or to-do; **Un-void**
+  brings it back. It won't void a WC something depends on (a transfer on a claim, …) until that's removed.
+- **No more making void WCs**: "Void" isn't offered under New WC or Change type. A missing WC # whose paper WC was voided
+  gets **Mark as voided** (was "Record as void"), and voided rows in the WC-log import are recorded the same way — the
+  number stays in the sequence as a VOID row and is never suggested or reused. Existing Void WCs are now voided.
+- **Residual shipment lines**: the **CEW?** box and the read-only **Program** column are gone. **Counts as** decides: a
+  CEW Non-CRT or CBEP residual counts for its program and prints bold; "— none —" is shipped but not counted. Lines that
+  had CEW? unticked are now "— none —", so totals don't change.
+- **Menus**: in narrower windows the folded menu's links are dark and readable; at full width the Setup dropdown opens
+  leftward and stays inside the window (no sideways scrolling).
+
 ## 3.7 — Change a WC's type
 - **Change type** on every WC's page (in All): pick the new type in a window that explains what happens before you
   confirm. Between types of the same kind it just switches. Between kinds (say a transfer that should have been a

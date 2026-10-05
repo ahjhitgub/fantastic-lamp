@@ -17,6 +17,9 @@ App.Pages.cancellations = (function () {
     const L = App.Logic; const out = [];
     const lot = L.normLot(u.lotNumber);
     const wc = lot ? ctx.wcByLot.get(lot) : null;
+    const mw = ctx.modelMap && L.modelWeightFlag(u, ctx.modelMap, ctx.modelOpt);
+    if (mw) out.push([`usual ${mw.usual} lbs (${mw.n} seen)`, 'warn']);
+    if (ctx.early && ctx.early.has(u.id)) out.push(['before the transfer came in', 'flag']);
     if (!lot) out.push(['no lot #', 'flag']);
     else if (!wc) out.push(['no WC', 'flag']);
     else if (wc.kind !== 'transfer') out.push(['WC not a transfer', 'flag']);
@@ -65,6 +68,11 @@ App.Pages.cancellations = (function () {
         pIdx: L.monthIndex(period.year, period.month),
       };
       const lb = L.likelyBulk(units); ctx.likelyBulk = new Set(units.filter((u, i) => lb[i]).map((u) => u.id));
+      // usual weights by make & model, learned from every cancellation log; and lines cancelled before their transfer came in
+      const everything = await App.DB.getAll('cancelledUnits');
+      ctx.modelMap = L.modelWeights(everything, ((await App.DB.get('meta', 'modelExclusions')) || { ids: [] }).ids);
+      ctx.modelOpt = { minSeen: data.profile.modelMinSeen || 3, tolerance: (data.profile.modelTolerance || 50) / 100 };
+      ctx.early = new Set(L.cancelledEarly(units, data.wcs).map((u) => u.id));
       const flags = new Map(units.map((u) => [u.id, flagsFor(u, ctx)]));
       const hereLabel = L.monthLabel(period.year, period.month);
 

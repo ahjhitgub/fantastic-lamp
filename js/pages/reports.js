@@ -101,6 +101,39 @@ App.Pages.reports = (function () {
       const partyName = (w) => { if (!w.transfer) return ''; const P = App.Store.transferParties(w, data); return (P.customer && P.customer.name) || (P.selfCollected ? data.profile.recyclerName : ''); };
       const S = L().transferSummary({ period, allocations: data.allocations, wcs: data.wcs, partyName });
 
+      // ---- close the month: every step, in order, with where to fix it
+      {
+        const month = L().periodMonthKey(period); const prog = period.cewType;
+        const mine = data.allocations.filter((a) => a.claimPeriodId === period.id);
+        const claimed = L().sumAllocs(mine);
+        const sameProg = new Set(data.periods.filter((p) => p.cewType === prog).map((p) => p.id));
+        const waiting = data.wcs.filter((w) => w.kind === 'transfer' && L().programOfType((w.transfer && w.transfer.transferType) || 'cew', prog) && String(w.date || '') <= L().periodEnd(period))
+          .filter((w) => { const c = (L().transferMath(w.transfer).claimable || {})[prog] || { weight: 0 }; return c.weight - L().sumAllocs(data.allocations.filter((a) => a.wcId === w.id && sameProg.has(a.claimPeriodId))).weight > 0.01; }).length;
+        const docsOk = S.rows.every((r) => { const w = data.wcs.find((x) => x.id === r.wcId) || {}; const T = App.Store.transfer198(w); return !!T.basis.log && (!T.plan || T.plan.complete); });
+        const units = await App.DB.getAllByIndex('cancelledUnits', 'claimPeriodId', period.id);
+        const cancelledLbs = prog === 'CBEP' ? L().dailySummary(units, await App.Store.cbepDaily(period.id)).total.weight : units.reduce((a, u) => a + L().num(u.weight), 0);
+        const allUnits = await App.DB.getAll('cancelledUnits');
+        const audit = L().reconcile({ period, units, allUnits, wcs: data.wcs, allocations: data.allocations, periods: data.periods, companies: data.companies });
+        const auditErrors = audit.issues.filter((i) => i.severity === 'error').length;
+        const resOk = prog === 'CBEP'
+          ? data.wcs.some((w) => L().isCbepInventory(w) && L().inventoryMonthKey(w) === month) && data.wcs.some((w) => w.kind === 'generation' && w.generation && w.generation.forMonth === month)
+          : prog === 'CRT' ? true : data.wcs.some((w) => w.kind === 'inventory' && !L().isCbepInventory(w) && L().inventoryMonthKey(w) === month);
+        const dups = L().sourceDuplicates(data.wcs.filter((w) => w.kind === 'transfer' && String(w.date || '').slice(0, 7) === month));
+        const steps = [
+          [S.rows.length > 0, `Transfers on the claim: ${S.rows.length}${waiting ? ` — ${waiting} more could go on it` : ''}`, '#/claimTransfers'],
+          [S.rows.length > 0 && docsOk, 'Every transfer has its 198 logs and strikes', '#/claimTransfers'],
+          [units.length > 0 && Math.abs(cancelledLbs - claimed.weight) < 0.01, `Cancellation log in, pounds match (${fmt(L().r2(cancelledLbs))} cancelled · ${fmt(claimed.weight)} claimed)`, '#/cancellations'],
+          [units.length > 0 && !auditErrors, auditErrors ? `Audit: ${auditErrors} error(s)` : 'Audit clean', '#/audit'],
+          [resOk, prog === 'CBEP' ? 'Month-end inventory check and generation certificates' : 'Month-end inventory check', '#/residuals'],
+          [!dups.length, dups.length ? `${dups.length} source(s) on more than one transfer's 198 this month: ${dups.slice(0, 3).map((d) => `${d.name} (WC #${d.transfers.map((w) => w.wcNumber).join(', #')})`).join('; ')}` : 'No source on two transfers\' 198s this month', '#/claimTransfers'],
+          [!!period.packetMadeAt, period.packetMadeAt ? `Claim packet made ${L().shortDate(period.packetMadeAt)}` : 'Claim packet made', ''],
+          [!!period.submittedDate, period.submittedDate ? `Submitted ${L().shortDate(period.submittedDate)}` : `Submitted${period.dueDate ? ` (by ${L().shortDate(period.dueDate)})` : ''}`, ''],
+        ];
+        const done = steps.filter(([ok]) => ok).length;
+        container.append(h(`<div class="panel"><h2>Close the month <span class="muted">— ${done} of ${steps.length}</span></h2>
+          <ol class="close-steps">${steps.map(([ok, text, href]) => `<li class="${ok ? 'done' : ''}"><span class="badge ${ok ? 'ok' : 'warn'}">${ok ? '✓' : '…'}</span> ${href && !ok ? `<a href="${href}">${esc(text)}</a>` : esc(text)}</li>`).join('')}</ol></div>`));
+      }
+
       // ---- 197S
       const sumHtml = (forPrint) => `<table class="${forPrint ? 'doc-table' : 'compact'}" ${forPrint ? '' : 'data-list="transfer-summary"'}><thead><tr><th>WC #</th><th>Received</th><th>Collector / handler</th><th class="num">Units claimed</th><th class="num">Lbs claimed</th><th>Note</th>${forPrint ? '' : '<th></th>'}</tr></thead>
         <tbody>${S.rows.map((r) => `<tr><td>${forPrint ? esc(r.wcNumber) : `<a href="#/wc/${r.wcId}">${esc(r.wcNumber)}</a>`}</td><td>${esc(L().shortDate(r.date))}</td><td>${esc(r.collector)}</td><td class="num">${fmt(r.units)}</td><td class="num">${fmt(r.weight)}</td>
@@ -110,6 +143,28 @@ App.Pages.reports = (function () {
         ${S.rows.length ? sumHtml(false) : '<p class="muted">No transfers allocated to this claim yet — allocate them on each transfer\'s WC (Claim periods section).</p>'}</div>`);
       s197.querySelector('[data-a="print"]').addEventListener('click', () => printSheet(`<h3>${esc(data.profile.recyclerName || '')} — 197S Transfer Summary, ${esc(label)}</h3>${sumHtml(true)}`));
       container.append(s197);
+
+      // ---- the claim packet: 197S, every transfer's Merged File in order, the CBEP checklist — one PDF
+      const pk = h(`<div class="panel"><div class="row spread"><h2>Claim packet</h2><button type="button" class="primary" data-a="packet" ${S.rows.length ? '' : 'disabled'}>Make the claim packet</button></div>
+        <p class="hint mt-0">One PDF: the 197S, then each transfer's Merged File (197, WC, 198 C) in order${period.cewType === 'CBEP' ? ', then the CBEP checklist' : ''}.</p><div data-role="out"></div></div>`);
+      pk.querySelector('[data-a="packet"]').addEventListener('click', async () => {
+        const box = pk.querySelector('[data-role="out"]'); box.replaceChildren(h('<p class="muted">Putting the packet together…</p>'));
+        try {
+          await App.UI.loadPdfLib(); const { PDFDocument } = window.PDFLib;
+          const out = await PDFDocument.create();
+          const add = async (bytes) => { const src = await PDFDocument.load(bytes); (await out.copyPages(src, src.getPageIndices())).forEach((pg) => out.addPage(pg)); };
+          await App.Docs.htmlToPdfPage(out, `<div class="doc-sheet"><h3>${esc(data.profile.recyclerName || '')} — 197S Transfer Summary, ${esc(label)}</h3>${sumHtml(true)}</div>`);
+          for (const r of S.rows) {
+            const w = data.wcs.find((x) => x.id === r.wcId); if (!w) continue;
+            const m = await App.Docs.buildMergedPdf(w, data, App.Store.transferParties(w, data), period); await add(m.bytes);
+          }
+          if (period.cewType === 'CBEP' && pk._checklist) await add(await pk._checklist());
+          const url = URL.createObjectURL(new Blob([await out.save()], { type: 'application/pdf' }));
+          const rec = await App.DB.get('claimPeriods', period.id); rec.packetMadeAt = App.UI.today(); await App.DB.put('claimPeriods', rec);
+          box.replaceChildren(h(`<div class="row"><a class="button primary" href="${url}" download="Claim_Packet_${esc(label.replace(/[^A-Za-z0-9]+/g, '_'))}.pdf">Download the claim packet</a><a class="button" href="${url}" target="_blank" rel="noopener">Open in a new tab</a><span class="muted">${out.getPageCount()} pages</span></div>`));
+        } catch (err) { box.replaceChildren(App.UI.notice(`${App.UI.errText(err)} The packet needs the site opened from its web address.`, 'error')); }
+      });
+      container.append(pk);
 
       // ---- each transfer's documents
       const rows = S.rows.map((r) => {
@@ -139,6 +194,7 @@ App.Pages.reports = (function () {
           <p class="hint mt-0">CalRecycle's checklist (Apr 2026), ticked from what's in the app: <strong>${done} of 108</strong> boxes. It stays fillable, so you can tick the rest yourself (like the cancellation method you pick in CEWIS). The 196C figures are on the <a href="#/cbep">CBEP month</a> page.</p>
           ${missing.length ? `<details ${missing.length < 15 ? 'open' : ''}><summary><strong>${missing.length} item(s) the app couldn't confirm</strong></summary><ul class="issues">${missing.map((x) => `<li class="warning">${esc(x)}</li>`).join('')}</ul></details>` : App.UI.notice('Everything on the checklist is confirmed.', 'ok').outerHTML}
           <div data-role="pdf"></div></div>`);
+        pk._checklist = () => fillChecklist(v);
         ck.querySelector('[data-a="fill"]').addEventListener('click', async () => {
           const box = ck.querySelector('[data-role="pdf"]'); box.replaceChildren(h('<p class="muted">Filling in the checklist…</p>'));
           try {
@@ -160,6 +216,7 @@ App.Pages.reports = (function () {
           <div class="field"><label>Review result</label><select data-r="reviewStatus">${[['', 'Waiting'], ['complete', 'Complete'], ['incomplete', 'Incomplete — rejected']].map(([k, l]) => `<option value="${k}" ${(period.reviewStatus || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
           <div class="field"><label>Closed on</label><input type="date" data-r="closedDate" value="${esc(period.closedDate || '')}"></div>
         </div>
+        <p>Payment requested: <strong>${(() => { const v = L().requestedFor(period, data.allocations, data.profile.claimRates); return v === null ? '— <span class="muted">(set the claim rate in Settings, or type it on the claim period)</span>' : `${L().money(v)}${L().parseMoney(period.requestedAmount) === null ? ' <span class="muted">(claimed pounds × the claim rate)</span>' : ''}`; })()}</strong></p>
         <div class="field"><label>Reasons it was incomplete / what to fix</label><textarea rows="2" data-r="deficiencies">${esc(period.deficiencies || '')}</textarea></div>
         ${owed.length ? `<h3>Still owed before it can close</h3><ul>${owed.map((o) => `<li><a href="#/wc/${o.wc.id}">${esc(o.text)}</a></li>`).join('')}</ul><p class="hint">These may come after submitting, but the claim isn't paid until they're in.</p>` : ''}
         <button type="button" class="primary" data-a="save">Save review</button></div>`);

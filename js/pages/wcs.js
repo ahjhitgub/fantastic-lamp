@@ -4,6 +4,7 @@ App.Pages = App.Pages || {};
 /** Every weight certificate, of every type. */
 App.Pages.wcs = (function () {
   const filters = { typeId: '', statusId: '', q: '', check: false };
+  let showArchived = false;
   let logText = '';      // what was pasted into "Paste your WC log"
   let preview = null;    // parsed rows waiting for Import
   let logMsg = null;
@@ -35,7 +36,7 @@ App.Pages.wcs = (function () {
     if (!preview) return el;
 
     const rows = preview.rows;
-    const existing = new Set(data.wcs.map((w) => L.normLot(w.wcNumber)));
+    const existing = new Set(data.allWcs.map((w) => L.normLot(w.wcNumber)));   // voided numbers are taken too
     const groups = L.groupCompanyNames(rows.map((r) => ({ name: r.companyName, note: r.companyNote })), data.companies);
     const newCompanies = [...new Map([...groups.values()].filter((g) => !g.companyId).map((g) => [g.group, g])).values()];
     const kindLabel = { transfer: 'Transfer', shipment: 'Residual shipment', void: 'Void', unknown: 'Needs a type' };
@@ -149,18 +150,18 @@ App.Pages.wcs = (function () {
       const typeName = (id) => (data.wcTypes.find((t) => t.id === id) || {}).name || '—';
       const compName = (id) => (data.companies.find((c) => c.id === id) || {}).name || '—';
       const today = App.UI.today();
-      const shortType = (w) => (w.kind === 'transfer' ? `Transfer · ${App.Logic.transferTypeDisplay(w.transfer)}` : w.kind === 'shipment' ? `Shipment · ${App.Logic.shipmentTypeDisplay((w.shipment && w.shipment.shipmentType) || 'cew')}` : { inventory: 'Inventory', generation: 'CBEP generated' }[w.kind] || typeName(w.typeId));
+      const shortType = (w) => (w.voided ? 'VOID' : w.kind === 'transfer' ? `Transfer · ${App.Logic.transferTypeDisplay(w.transfer)}` : w.kind === 'shipment' ? `Shipment · ${App.Logic.shipmentTypeDisplay((w.shipment && w.shipment.shipmentType) || 'cew')}` : { inventory: 'Inventory', generation: 'CBEP generated' }[w.kind] || typeName(w.typeId));
 
       container.append(header('Weight Certificates', 'Every WC — transfers, residual shipments, inventory checks, and any other type you add in Settings.'));
-      const gap = App.UI.gapAlert('wc', App.Logic.wcNumberGaps(data.wcs, data.skipped.wc));
+      const gap = App.UI.gapAlert('wc', App.Logic.wcNumberGaps(data.allWcs, data.skipped.wc));
       if (gap) container.append(gap);
 
       const form = h(`
         <form class="panel">
           <h2>New WC</h2>
           <div class="field-row">
-            <div class="field"><label>WC #</label><input name="wcNumber" required value="${esc(App.Logic.nextWcNumber(data.wcs))}"></div>
-            <div class="field"><label>Type</label><select name="typeId">${options(data.wcTypes.filter((t) => t.kind !== 'inventory' && t.kind !== 'generation').map((t) => ({ value: t.id, label: t.name })), '')}</select></div>
+            <div class="field"><label>WC #</label><input name="wcNumber" required value="${esc(App.Logic.nextWcNumber(data.allWcs))}"></div>
+            <div class="field"><label>Type</label><select name="typeId">${options(data.wcTypes.filter((t) => t.kind !== 'inventory' && t.kind !== 'generation' && !/^void$/i.test(String(t.name).trim())).map((t) => ({ value: t.id, label: t.name })), '')}</select></div>
             <div class="field" style="flex:2"><label data-role="party-label"></label><select name="party"></select></div>
             <div class="field"><label>Date</label><input type="date" name="date" value="${App.UI.today()}"></div>
             <div class="field"><label>&nbsp;</label><button type="submit" class="primary">Create and open</button></div>
@@ -202,7 +203,8 @@ App.Pages.wcs = (function () {
       const q = App.Logic.norm(filters.q);
       const period = App.Store.currentPeriod(data);
       if (period) container.append(App.UI.noticeHtml(`Showing WCs that belong to <strong>${App.UI.esc(App.Models.formatPeriodLabel(period))}</strong>: its transfers (not already fully claimed), its program's residual shipments that month, and that month's storage and CBEP generation WCs — nothing dated after ${App.UI.esc(L.shortDate(L.periodEnd(period)))} except those. Pick <strong>All — no claim period</strong> to see every WC.`, 'info'));
-      const list = data.wcs.filter((w) => !w.noWc && App.Store.inScope(w, data) && (!filters.typeId || w.typeId === Number(filters.typeId))
+      const archivedIds = new Set(data.wcs.filter((w) => App.Logic.isArchived(w, data.allocations, data.periods, App.UI.today(), data.profile.archiveDays || 90)).map((w) => w.id));
+      const list = data.allWcs.filter((w) => !w.noWc && (showArchived || !archivedIds.has(w.id)) && App.Store.inScope(w, data) && (!filters.typeId || w.typeId === Number(filters.typeId))
         && (!filters.statusId || (filters.statusId === 'none' ? !w.statusId : w.statusId === Number(filters.statusId)))
         && (!filters.check || logChecks(w).length)
         && (!q || App.Logic.norm(w.wcNumber).includes(q) || App.Logic.norm(compName(w.companyId)).includes(q) || App.Logic.norm(w.notes).includes(q)))
@@ -213,9 +215,10 @@ App.Pages.wcs = (function () {
       const statusOpts = (sel) => options(data.wcStatuses.map((s) => ({ value: s.id, label: s.name })), sel, '(no status)');
       const table = h(`
         <div class="panel"><div class="table-scroll"><table class="dense" data-list="wcs">
-          <thead><tr><th>WC #</th><th>Type</th><th>Date</th><th>Company</th><th>Status</th><th>Paid / due</th><th>Packet</th><th>Lot</th><th>Notes / weights</th><th class="num">Docs</th><th></th></tr></thead>
+          <thead><tr><th><input type="checkbox" data-a="all" title="Select all shown"></th><th>WC #</th><th>Type</th><th>Date</th><th>Company</th><th>Status</th><th>Paid / due</th><th>Packet</th><th>Lot</th><th>Notes / weights</th><th class="num">Docs</th><th></th></tr></thead>
           <tbody>${list.map((w) => `
             <tr data-id="${w.id}">
+              <td><input type="checkbox" data-a="pick"></td>
               <td><a href="#/wc/${w.id}"><strong>${esc(w.wcNumber)}</strong></a></td>
               <td data-value="${esc(shortType(w))}">${esc(shortType(w))}${logChecks(w).map((c) => `<span class="stack-badge"><span class="badge warn">${esc(c)}</span></span>`).join('')}</td>
               <td>${esc(App.Logic.shortDate(w.date))}</td>
@@ -229,6 +232,34 @@ App.Pages.wcs = (function () {
               <td><a href="#/doc/${w.id}/wc">Print</a></td>
             </tr>`).join('')}</tbody>
         </table></div></div>`);
+      const batch = h(`<div class="batch-bar" hidden><strong data-role="n"></strong>
+        <label class="row">Set status <select data-role="bstatus"><option value="">— pick —</option><option value="none">(no status)</option>${data.wcStatuses.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label>
+        <button type="button" data-a="bapply">Apply</button><button type="button" data-a="bprint">Print selected</button>
+        ${archivedIds.size ? `<span class="spacer"></span>` : ''}</div>`);
+      const picked = () => [...table.querySelectorAll('tbody [data-a="pick"]:checked')].map((c) => Number(c.closest('tr').dataset.id));
+      const sync = () => { const n = picked().length; batch.hidden = !n; batch.querySelector('[data-role="n"]').textContent = `${n} selected`; };
+      table.querySelectorAll('tbody [data-a="pick"]').forEach((c) => c.addEventListener('change', sync));
+      table.querySelector('[data-a="all"]').addEventListener('change', (e) => { table.querySelectorAll('tbody [data-a="pick"]').forEach((c) => { c.checked = e.target.checked; }); sync(); });
+      batch.querySelector('[data-a="bapply"]').addEventListener('click', async () => {
+        const v = batch.querySelector('[data-role="bstatus"]').value; const ids = picked(); if (!v || !ids.length) return;
+        if (!window.confirm(`Set the status of ${ids.length} WC(s)?`)) return;
+        for (const id of ids) { const wc = await App.DB.get('wcs', id); wc.statusId = v === 'none' ? null : Number(v); await App.DB.put('wcs', wc); }
+        App.Pages.wc.reset(); App.rerender();
+      });
+      batch.querySelector('[data-a="bprint"]').addEventListener('click', () => {
+        const ids = picked(); if (!ids.length) return;
+        const sheets = ids.map((id) => data.allWcs.find((w) => w.id === id)).filter(Boolean).map((w) => `<div class="doc-sheet batch-sheet${w.voided ? ' is-void' : ''}">${App.Docs.wcSheetHtml(w, data)}</div>`).join('');
+        const sheet = h(`<div class="print-area batch-print" style="position:fixed;inset:0;overflow:auto;z-index:50;background:#fff">${sheets}</div>`);
+        document.getElementById('main-content').append(sheet);
+        const done = () => { sheet.remove(); window.removeEventListener('afterprint', done); };
+        window.addEventListener('afterprint', done); window.print(); setTimeout(done, 60000);
+      });
+      table.prepend(batch);
+      if (archivedIds.size) {
+        const ar = h(`<label class="row muted"><input type="checkbox" ${showArchived ? 'checked' : ''}> Show archived transfers (${archivedIds.size}) — fully claimed on claims closed over ${data.profile.archiveDays || 90} days ago</label>`);
+        ar.querySelector('input').addEventListener('change', (e) => { showArchived = e.target.checked; App.rerender(); });
+        table.prepend(ar);
+      }
       table.querySelectorAll('[data-role="status"]').forEach((sel) => sel.addEventListener('change', async () => {
         const id = Number(sel.closest('tr').dataset.id);
         const wc = await App.DB.get('wcs', id);

@@ -76,3 +76,19 @@ survives; they are migrated into the stores above once, on first load.
 ## 3.7 additions
 - **wcs**: `typeHistory: [{from, to, date}]` (type changes); `stash: {kind: details}` — a kind's details kept aside after a
   change of kind, restored when switching back.
+
+## 3.8 additions
+- **wcs**: `voided: {date, reason, numberOnly}` — a voided WC (kept for its number; counted nowhere). `numberOnly` = a
+  number whose paper WC was voided, with nothing behind it. `Store.loadAll()` returns `wcs` without voided ones (every
+  total) and `allWcs` with them (number sequences, lists).
+- Residual shipment lines no longer use `cew`: a line is a residual when it has a `materialId`.
+
+## 4.0 additions
+- **facilityProfile**: `claimRates: {NonCRT, CBEP}` ($/lb), `archiveDays`, `modelMinSeen`, `modelTolerance` (%), `largeText`.
+- **priceItems**: `since` (when the current rates started) and `history: [{from, dropOff, pickUp, variable}]` — earlier
+  rates; `L.rateOn(item, date)` gives the rates in effect on a date (a first rate makes no history).
+- **wcs**: `history: [{at, changes: [{field, from, to}]}]` (edit history, newest first, up to 200);
+  `transfer.timeline.allPaperwork`, `.paid` (3-day rule); `transfer.adjustmentRequested` (date a 198 A was asked for).
+- **claimPeriods**: `dueDate` (submit by), `packetMadeAt`.
+- **meta**: `lastBackup {at, how}`, `backupFolder {handle}` (automatic backups), `trash {items: [{kind, label, record,
+  related, deletedAt}]}` (30 days), `modelExclusions {ids}` (cancellation entries left out of usual weights).

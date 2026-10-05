@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CEW / CBEP Tracker</title>
-<link rel="stylesheet" href="css/styles.css?v=3.7.0">
+<link rel="stylesheet" href="css/styles.css?v=4.0.0">
 </head>
 <body>
 
@@ -21,6 +21,8 @@
         </span>
         <span class="brand-name">CEW / CBEP Tracker<small>CalRecycle claims, <span id="app-version"></span></small></span>
       </a>
+      <div class="search-box"><input id="global-search" type="search" placeholder="Search WC #, IRR #, company, name or address" autocomplete="off" aria-label="Search">
+        <div id="search-results" class="search-results" hidden></div></div>
       <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-nav">Menu</button>
       <nav class="topnav" id="top-nav" aria-label="Main"></nav>
     </div>
@@ -40,36 +42,37 @@
 <main id="main-content"></main>
 
 <!-- Core (no dependencies) -->
-<script src="js/models.js?v=3.7.0" defer></script>
-<script src="js/logic.js?v=3.7.0" defer></script>
-<script src="js/logread.js?v=3.7.0" defer></script>
-<script src="js/checklistmap.js?v=3.7.0" defer></script>
-<script src="js/ui.js?v=3.7.0" defer></script>
-<script src="js/db.js?v=3.7.0" defer></script>
-<script src="js/backup.js?v=3.7.0" defer></script>
-<script src="js/attachments.js?v=3.7.0" defer></script>
-<script src="js/periods.js?v=3.7.0" defer></script>
-<script src="js/store.js?v=3.7.0" defer></script>
-<script src="js/pages/dashboard.js?v=3.7.0" defer></script>
-<script src="js/pages/claimPeriods.js?v=3.7.0" defer></script>
-<script src="js/pages/wcs.js?v=3.7.0" defer></script>
-<script src="js/pages/wc.js?v=3.7.0" defer></script>
-<script src="js/pages/doc.js?v=3.7.0" defer></script>
-<script src="js/pages/transfers.js?v=3.7.0" defer></script>
-<script src="js/pages/cancellations.js?v=3.7.0" defer></script>
-<script src="js/pages/audit.js?v=3.7.0" defer></script>
-<script src="js/pages/residuals.js?v=3.7.0" defer></script>
-<script src="js/pages/crtplasma.js?v=3.7.0" defer></script>
-<script src="js/pages/annual.js?v=3.7.0" defer></script>
-<script src="js/pages/cbep.js?v=3.7.0" defer></script>
-<script src="js/pages/claimtransfers.js?v=3.7.0" defer></script>
-<script src="js/pages/disposition.js?v=3.7.0" defer></script>
-<script src="js/pages/reports.js?v=3.7.0" defer></script>
-<script src="js/pages/companies.js?v=3.7.0" defer></script>
-<script src="js/pages/prices.js?v=3.7.0" defer></script>
-<script src="js/pages/descriptions.js?v=3.7.0" defer></script>
-<script src="js/pages/settings.js?v=3.7.0" defer></script>
-<script src="js/app.js?v=3.7.0" defer></script>
+<script src="js/models.js?v=4.0.0" defer></script>
+<script src="js/logic.js?v=4.0.0" defer></script>
+<script src="js/logread.js?v=4.0.0" defer></script>
+<script src="js/checklistmap.js?v=4.0.0" defer></script>
+<script src="js/help.js?v=4.0.0" defer></script>
+<script src="js/ui.js?v=4.0.0" defer></script>
+<script src="js/db.js?v=4.0.0" defer></script>
+<script src="js/backup.js?v=4.0.0" defer></script>
+<script src="js/attachments.js?v=4.0.0" defer></script>
+<script src="js/periods.js?v=4.0.0" defer></script>
+<script src="js/store.js?v=4.0.0" defer></script>
+<script src="js/pages/dashboard.js?v=4.0.0" defer></script>
+<script src="js/pages/claimPeriods.js?v=4.0.0" defer></script>
+<script src="js/pages/wcs.js?v=4.0.0" defer></script>
+<script src="js/pages/wc.js?v=4.0.0" defer></script>
+<script src="js/pages/doc.js?v=4.0.0" defer></script>
+<script src="js/pages/transfers.js?v=4.0.0" defer></script>
+<script src="js/pages/cancellations.js?v=4.0.0" defer></script>
+<script src="js/pages/audit.js?v=4.0.0" defer></script>
+<script src="js/pages/residuals.js?v=4.0.0" defer></script>
+<script src="js/pages/crtplasma.js?v=4.0.0" defer></script>
+<script src="js/pages/annual.js?v=4.0.0" defer></script>
+<script src="js/pages/cbep.js?v=4.0.0" defer></script>
+<script src="js/pages/claimtransfers.js?v=4.0.0" defer></script>
+<script src="js/pages/disposition.js?v=4.0.0" defer></script>
+<script src="js/pages/reports.js?v=4.0.0" defer></script>
+<script src="js/pages/companies.js?v=4.0.0" defer></script>
+<script src="js/pages/prices.js?v=4.0.0" defer></script>
+<script src="js/pages/descriptions.js?v=4.0.0" defer></script>
+<script src="js/pages/settings.js?v=4.0.0" defer></script>
+<script src="js/app.js?v=4.0.0" defer></script>
 
 </body>
 </html>

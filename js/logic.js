@@ -471,7 +471,7 @@
     shipments.forEach((w) => ((w.shipment && w.shipment.lines) || []).forEach((l) => {
       if (L.lineProgram(w, l, materials) === 'cbep') return;   // CBEP residuals count only toward the 196C
       // only CEW material counts toward residuals; lines marked non-CEW are shipped but not counted
-      if (l.cew === false) { nonCewShipped = r2(nonCewShipped + L.lineNet(l)); return; }
+      if (l.materialId == null) { nonCewShipped = r2(nonCewShipped + L.lineNet(l)); return; }   // "— none —": shipped, not a residual
       if (l.materialId != null) shipped.set(l.materialId, r2((shipped.get(l.materialId) || 0) + L.lineNet(l)));
     }));
 
@@ -916,7 +916,8 @@
    *  deductions = non-CEW units we charge for, * handling deductions, trucking, and any added by hand
    *  final balance = total credit − total deduction
    */
-  L.invoiceMath = ({ transfer, mode, priceItems, company }) => {
+  L.invoiceMath = ({ transfer, mode, priceItems: allItems, company, date }) => {
+    const priceItems = date ? L.priceItemsOn(allItems, date) : allItems;   // the rates in effect on the transfer's date
     const rows = L.documentRows(transfer, priceItems).map((r) => {
       const res = L.resolveRate({ row: r, mode, priceItems, company });
       const qty = res.basis === 'unit' ? r.units : r.weight;
@@ -1433,7 +1434,7 @@
       let key = null; let label = l.description || (m && m.name) || '';
       if (program === 'cbep') { const res = L.residual196C(m); label = `CBEP ${res === L.NOT_CBEP ? (L.stripProgram(label) || 'Other') : res}`; key = label; }
       else if (type === 'both' || type === 'cbep') { const col = m && L.FORM_V_CATEGORIES.includes(m.category) ? m.category : null; label = `CEW Non-CRT ${col || L.stripProgram(label)}`; key = col ? label : null; }
-      const row = { label, count, gross, tare, net, bold: l.cew !== false, program, residual: program === 'cbep' ? L.residual196C(m) : null };
+      const row = { label, count, gross, tare, net, bold: l.materialId != null, program, residual: program === 'cbep' ? L.residual196C(m) : null };
       if (key && by.has(key)) { const x = by.get(key); x.count += count; x.gross = r2(x.gross + gross); x.tare = r2(x.tare + tare); x.net = r2(x.net + net); return; }
       if (key) by.set(key, row);
       rows.push(row);
@@ -1505,6 +1506,7 @@
    *  month-end storage (LCD lamps) and CBEP generation WCs for its month even if dated after; nothing else. */
   L.wcInPeriod = (w, period, ctx = {}) => {
     if (!period) return true;
+    if (w.voided) return false;
     const month = L.periodMonthKey(period);
     if (w.kind === 'transfer') return L.transferInPeriod(w, period, ctx.allocations, ctx.periods);
     if (w.kind === 'shipment') return L.programOfType((w.shipment && w.shipment.shipmentType) || 'cew', period.cewType) && String(w.date || '').slice(0, 7) === month;
@@ -1645,6 +1647,166 @@
       return { wcId: a.wcId, wcNumber: w.wcNumber, date: w.date, collector: partyName(w), units: num(a.units), weight: r2(num(a.weight)), partial: others.length > 0 };
     }).sort((x, y) => String(x.date).localeCompare(String(y.date)) || String(x.wcNumber).localeCompare(String(y.wcNumber), undefined, { numeric: true }));
     return { rows, totals: { units: rows.reduce((a, r) => a + r.units, 0), weight: r2(rows.reduce((a, r) => a + r.weight, 0)) } };
+  };
+
+  // ---------- 4.0: streamlining ----------
+  const addDays = (iso, n) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  L.addDays = addDays;
+  const median = (xs) => { const a = xs.slice().sort((x, y) => x - y); if (!a.length) return 0; const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+
+  /** Rate history: a price item's rates as they were on a date (rates changed on `since`; earlier ones in `history`). */
+  L.rateOn = (item, date) => {
+    if (!item || !date || !item.since || date >= item.since) return item;
+    const past = (item.history || []).filter((h) => h.from <= date).sort((a, b) => String(b.from).localeCompare(String(a.from)))[0]
+      || (item.history || []).slice().sort((a, b) => String(a.from).localeCompare(String(b.from)))[0];
+    return past ? { ...item, dropOff: past.dropOff, pickUp: past.pickUp, variable: past.variable } : item;
+  };
+  L.priceItemsOn = (items, date) => (items || []).map((p) => L.rateOn(p, date));
+  /** Saving new rates: the old ones go into history, in effect until `from`. */
+  L.withNewRates = (item, rates, from) => {
+    const changed = ['dropOff', 'pickUp', 'variable'].some((k) => k in rates && String(rates[k] ?? '') !== String(item[k] ?? ''));
+    if (!changed) return { ...item, ...rates };
+    // a first rate (nothing set before) isn't a change of rate: no history
+    const hadRate = ['dropOff', 'pickUp'].some((k) => String(item[k] ?? '').trim() !== '') || item.variable;
+    if (!hadRate) return { ...item, ...rates };
+    const history = [...(item.history || []), { from: item.since || '0000-01-01', dropOff: item.dropOff, pickUp: item.pickUp, variable: item.variable }];
+    return { ...item, ...rates, since: from, history };
+  };
+
+  /** Usual pounds per unit for each kind, from all transfer lines (needs 8 lines before it judges). */
+  L.unitWeightNorms = (wcs) => {
+    const by = {};
+    wcs.filter((w) => w.kind === 'transfer' && !w.voided).forEach((w) => ((w.transfer && w.transfer.lines) || []).forEach((l) => {
+      const m = L.lineMath(l); if (m.irrUnits > 0 && m.irrWeight > 0) (by[l.category] = by[l.category] || []).push(m.irrWeight / m.irrUnits);
+    }));
+    return Object.fromEntries(Object.entries(by).map(([k, xs]) => [k, { median: r2(median(xs)), n: xs.length }]));
+  };
+  L.unitWeightIssues = (transfer, norms) => ((transfer && transfer.lines) || []).flatMap((l) => {
+    const m = L.lineMath(l); const n = norms[l.category];
+    if (!n || n.n < 8 || !(m.irrUnits > 0) || !(m.irrWeight > 0)) return [];
+    const per = m.irrWeight / m.irrUnits;
+    if (per > n.median * 2.5 || per < n.median * 0.4) return [`${(L.CATEGORIES.find((c) => c.key === l.category) || {}).label || l.category}: ${fmt(r2(per))} lbs per unit — usually about ${fmt(n.median)} (${n.n} lines). Check the units and weight.`];
+    return [];
+  });
+
+  /** Make & model (or CBEP device) usual weights, learned from cancellation logs; bulk lines and excluded ones left out. */
+  L.modelKey = (u) => L.norm(u.device ? `device ${u.device}` : `${u.make || ''} ${u.model || ''}`);
+  L.modelWeights = (units, excluded = []) => {
+    const by = new Map();
+    units.filter((u) => !u.bulk && !excluded.includes(u.id) && num(u.weight) > 0 && L.modelKey(u).trim()).forEach((u) => {
+      const k = L.modelKey(u); by.set(k, [...(by.get(k) || []), num(u.weight)]);
+    });
+    return new Map([...by].map(([k, xs]) => [k, { median: r2(median(xs)), n: xs.length }]));
+  };
+  L.modelWeightFlag = (u, map, { minSeen = 3, tolerance = 0.5 } = {}) => {
+    if (!u || u.bulk || !(num(u.weight) > 0)) return null;
+    const m = map.get(L.modelKey(u)); if (!m || m.n < minSeen || !m.median) return null;
+    return Math.abs(num(u.weight) - m.median) / m.median > tolerance ? { usual: m.median, n: m.n } : null;
+  };
+
+  /** All paperwork received: the step's date, or once the 198 (the A if adjustments were needed) and the signed 197 are both in. */
+  L.paperworkDate = (w) => {
+    const tl = ((w && w.transfer) || {}).timeline || {};
+    if (tl.allPaperwork && tl.allPaperwork !== 'N/A') return tl.allPaperwork;
+    const logs = tl.customerAdjustments && tl.customerAdjustments !== 'N/A' ? tl.customerAdjustments : tl.sourceLogsReceived;
+    if (!logs || logs === 'N/A' || !tl.form197Signed || tl.form197Signed === 'N/A') return '';
+    return [logs, tl.form197Signed].sort().pop();
+  };
+  /** 3 calendar days from all paperwork to close and pay (not for Dual Entity transfers). */
+  L.paymentDue = (w, today) => {
+    if (!w || w.kind !== 'transfer' || w.voided || (w.transfer && w.transfer.selfCollected)) return null;
+    const p = L.paperworkDate(w); if (!p) return null;
+    const due = addDays(p, 3); const paid = ((w.transfer.timeline || {}).paid);
+    const status = paid && paid !== 'N/A' ? 'paid' : today > due ? 'overdue' : today === due ? 'due-today' : addDays(today, 1) === due ? 'due-tomorrow' : 'open';
+    return { paperwork: p, due, status, paid: paid && paid !== 'N/A' ? paid : '' };
+  };
+
+  /** A claim's payment requested: claimed pounds × CalRecycle's rate for its claim type (Settings). */
+  L.claimAmount = (period, allocations, rates = {}) => {
+    const rate = L.parseMoney((rates || {})[period.cewType]);
+    if (rate === null) return null;
+    return r2(L.sumAllocs(allocations.filter((a) => a.claimPeriodId === period.id)).weight * rate);
+  };
+  L.requestedFor = (period, allocations, rates) => {
+    const typed = L.parseMoney(period.requestedAmount);
+    return typed !== null ? typed : L.claimAmount(period, allocations, rates);
+  };
+
+  /** The same source (name + address) on more than one transfer's 198 — a double claim waiting to happen. */
+  L.sourceDuplicates = (transfers) => {
+    const by = new Map();
+    transfers.forEach((w) => {
+      const b = L.logBasis(w.transfer || {}); if (!b.log) return;
+      b.log.rows.forEach((r) => {
+        const k = `${L.norm(r.name).replace(/\s+/g, '')}|${L.norm(r.address).replace(/\s+/g, '')}`;
+        if (k === '|') return;
+        const list = by.get(k) || []; if (!list.some((x) => x.wc.id === w.id)) list.push({ wc: w, row: r }); by.set(k, list);
+      });
+    });
+    return [...by.values()].filter((list) => list.length > 1).map((list) => ({ name: list[0].row.name, address: list[0].row.address, transfers: list.map((x) => x.wc) }));
+  };
+  /** Cancellation lines dated before their transfer was received. */
+  L.cancelledEarly = (units, wcs) => units.filter((u) => {
+    const w = wcs.find((x) => x.kind === 'transfer' && L.normLot(x.wcNumber) === L.normLot(u.lotNumber));
+    return w && u.date && w.date && u.date < w.date;
+  });
+
+  /** Margin: the claim payment a transfer should bring (its claimable pounds × claim rate) less what we paid for it. */
+  L.transferMargin = ({ wc, invoice, rates = {} }) => {
+    const c = L.transferMath((wc && wc.transfer) || {}).claimable || {};
+    let expected = 0; let known = true;
+    ['NonCRT', 'CBEP'].forEach((k) => {
+      const lbs = (c[k] || {}).weight || 0; if (!lbs) return;
+      const rate = L.parseMoney(rates[k]); if (rate === null) { known = false; return; }
+      expected = r2(expected + lbs * rate);
+    });
+    const paid = invoice ? invoice.finalBalance : 0;
+    return { expected: known ? expected : null, paid, margin: known ? r2(expected - paid) : null };
+  };
+
+  /** Archived: a transfer fully claimed on claims closed more than `days` ago. */
+  L.isArchived = (w, allocations, periods, today, days = 90) => {
+    if (!w || w.kind !== 'transfer') return false;
+    const mine = allocations.filter((a) => a.wcId === w.id); if (!mine.length) return false;
+    const c = L.transferMath(w.transfer || {}).claimable || {};
+    const full = Object.entries(c).every(([k, v]) => !v.weight || L.sumAllocs(mine.filter((a) => (periods.find((p) => p.id === a.claimPeriodId) || {}).cewType === k)).weight >= v.weight - 0.01);
+    const cutoff = addDays(today, -days);
+    return full && mine.every((a) => { const p = periods.find((x) => x.id === a.claimPeriodId); return p && p.closedDate && p.closedDate <= cutoff; });
+  };
+
+  /** Everything the top-bar search can find. */
+  L.searchIndex = (data) => {
+    const out = [];
+    data.allWcs.forEach((w) => {
+      const company = data.companies.find((c) => c.id === w.companyId || (w.transfer && (c.id === w.transfer.handlerId || c.id === w.transfer.collectorId)));
+      out.push({ kind: 'WC', label: `WC #${w.wcNumber || '(no #)'}${w.voided ? ' · VOID' : ''}`, sub: [w.kind, company && company.name, w.date].filter(Boolean).join(' · '), href: `#/wc/${w.id}`,
+        text: L.norm([w.wcNumber, w.transfer && w.transfer.irrNumber ? `irr ${w.transfer.irrNumber}` : '', company && company.name].join(' ')) });
+      ['o', 'a'].forEach((k) => { const lg = w.transfer && w.transfer.logs && w.transfer.logs[k];
+        (lg && lg.rows || []).forEach((r) => out.push({ kind: `198 ${k.toUpperCase()}`, label: r.name || '(no name)', sub: `${r.address || ''} · WC #${w.wcNumber}`, href: `#/wc/${w.id}`, text: L.norm(`${r.name} ${r.address}`) })); });
+    });
+    data.companies.forEach((c) => out.push({ kind: 'Company', label: c.name, sub: (c.roles || []).join(', '), href: `#/companies/${c.id}`, text: L.norm(`${c.name} ${(c.aliases || []).join(' ')} ${c.cewId || ''}`) }));
+    return out;
+  };
+  L.search = (index, q, limit = 12) => {
+    const words = L.norm(q).split(/\s+/).filter(Boolean); if (!words.length) return [];
+    return index.filter((x) => words.every((w) => x.text.includes(w))).slice(0, limit);
+  };
+
+  /** What a save changed, in plain words (for a WC's edit history). */
+  L.changedFields = (before, after) => {
+    const out = []; const skip = new Set(['history', 'updatedAt', 'createdAt']);
+    const walk = (a, b, path) => {
+      if (out.length > 40) return;
+      if (a && b && typeof a === 'object' && typeof b === 'object' && !Array.isArray(a) && !Array.isArray(b)) {
+        new Set([...Object.keys(a), ...Object.keys(b)]).forEach((k) => { if (!skip.has(k)) walk(a[k], b[k], path ? `${path}.${k}` : k); });
+        return;
+      }
+      if (Array.isArray(a) && Array.isArray(b) && a.length === b.length) { a.forEach((x, i) => walk(x, b[i], `${path}[${i + 1}]`)); return; }
+      const sa = JSON.stringify(a ?? ''); const sb = JSON.stringify(b ?? '');
+      if (sa !== sb) out.push({ field: path, from: Array.isArray(a) ? `${a.length} items` : String(a ?? ''), to: Array.isArray(b) ? `${b.length} items` : String(b ?? '') });
+    };
+    walk(before, after, '');
+    return out;
   };
 
   // ---------- annual summary (calendar year, each item by its own date) ----------

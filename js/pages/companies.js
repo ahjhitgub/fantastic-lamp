@@ -10,6 +10,7 @@ App.Pages.companies = (function () {
   let editingId = null;
   let showClosed = false;   // saved companies: open accounts unless ticked
   let typeFilter = '';      // saved companies: '' = all types, a role key, or 'none'
+  let tab = 'customers';   // Customers | Vendors | No role yet
   let openDetailId = null;  // the company whose details are showing
   let msg = null;
 
@@ -194,6 +195,7 @@ App.Pages.companies = (function () {
     el.querySelector('[data-a="delete"]').addEventListener('click', async () => {
       if (uses.get(c.id)) { msg = { kind: 'error', text: `${c.name} is used on ${uses.get(c.id)} WC(s) — merge it into another company instead of deleting.` }; App.rerender(); return; }
       if (!confirm(`Delete ${c.name}?`)) return;
+      await App.Store.toTrash('company', c.name, c);
       await App.DB.delete('companies', c.id);
       editingId = null;
       App.rerender();
@@ -359,10 +361,20 @@ App.Pages.companies = (function () {
     const shown = data.companies.filter((c) => showClosed || c.accountStatus !== 'closed');
     const TYPES = [['handler', 'Handlers'], ['collector', 'Collectors'], ['recycler', 'Approved recyclers'], ['destination', 'Vendors']];
     const hasType = (c, t) => (t === 'none' ? !(c.roles || []).length : (c.roles || []).includes(t));
-    const typeOpts = [['', `All types (${shown.length})`], ...TYPES.map(([k, l]) => [k, `${l} (${shown.filter((c) => hasType(c, k)).length})`])];
-    const untyped = shown.filter((c) => hasType(c, 'none')).length;
-    if (untyped || typeFilter === 'none') typeOpts.push(['none', `No type set (${untyped})`]);
-    const list = shown.filter((c) => !typeFilter || hasType(c, typeFilter));
+    // customers (handlers, approved collectors) and vendors (who we ship to, approved recyclers) on separate tabs
+    const isCust = (c) => (c.roles || []).some((r) => r === 'handler' || r === 'collector');
+    const isVend = (c) => (c.roles || []).some((r) => r === 'destination' || r === 'recycler');
+    const tabOf = (c) => (isCust(c) ? 'customers' : isVend(c) ? 'vendors' : 'none');
+    const opened = data.companies.find((c) => c.id === openDetailId);
+    if (opened && !(tab === 'customers' ? isCust(opened) : tab === 'vendors' ? isVend(opened) : !(opened.roles || []).length)) { tab = tabOf(opened); typeFilter = ''; }
+    const inTab = (c) => (tab === 'customers' ? isCust(c) : tab === 'vendors' ? isVend(c) : !(c.roles || []).length);
+    const counts = { customers: shown.filter(isCust).length, vendors: shown.filter(isVend).length, none: shown.filter((c) => !(c.roles || []).length).length };
+    if (tab === 'none' && !counts.none) tab = 'customers';
+    const tabTypes = TYPES.filter(([k]) => (tab === 'customers' ? ['handler', 'collector'] : tab === 'vendors' ? ['recycler', 'destination'] : []).includes(k));
+    const inTabShown = shown.filter(inTab);
+    const typeOpts = [['', `All (${inTabShown.length})`], ...tabTypes.map(([k, l]) => [k, `${l} (${inTabShown.filter((c) => hasType(c, k)).length})`])];
+    if (typeFilter && !tabTypes.some(([k]) => k === typeFilter)) typeFilter = '';
+    const list = inTabShown.filter((c) => !typeFilter || hasType(c, typeFilter));
     const cewCell = (c) => ((c.roles || []).includes('handler') ? 'Handler' : c.cewId ? esc(c.cewId) : '<span class="muted">—</span>');
     const isCustomer = (c) => (c.roles || []).some((r) => r === 'handler' || r === 'collector');
     const details = (c) => {
@@ -387,7 +399,9 @@ App.Pages.companies = (function () {
     };
     const el = h(`
       <div class="panel">
-        <div class="row spread"><h2>Saved companies</h2>
+        <div class="row spread"><h2>Saved companies</h2></div>
+        <div class="page-tabs company-tabs">${[['customers', 'Customers'], ['vendors', 'Vendors'], ...(counts.none ? [['none', 'No role yet']] : [])].map(([k, l]) => `<a href="javascript:void 0" data-tab="${k}" class="${tab === k ? 'active' : ''}">${l} <span class="muted">${counts[k]}</span></a>`).join('')}</div>
+        <div class="row spread"><span></span>
           <div class="row">
             <label class="row">Type <select data-f="type">${typeOpts.map(([v, l]) => `<option value="${v}" ${v === typeFilter ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
             <label class="row"><input type="checkbox" data-f="closed" ${showClosed ? 'checked' : ''}> Show closed accounts${closedCount ? ` (${closedCount})` : ''}</label>
@@ -396,16 +410,17 @@ App.Pages.companies = (function () {
           <thead><tr><th>Company</th><th>Owner</th><th>CEWID #</th><th>CBEP enrolled</th><th></th></tr></thead>
           <tbody>${list.map((c) => `
             <tr data-id="${c.id}" class="${c.accountStatus === 'closed' ? 'closed-row' : ''}">
-              <td data-value="${esc(c.name)}"><button type="button" class="linklike co-name" data-a="details" aria-expanded="${openDetailId === c.id}">${esc(c.name)}</button>${c.accountStatus === 'closed' ? ' <span class="badge flag">Closed</span>' : ''}</td>
+              <td data-value="${esc(c.name)}"><button type="button" class="linklike co-name" data-a="details" aria-expanded="${openDetailId === c.id}">${esc(c.name)}</button>${tab === 'customers' && isVend(c) ? ' <span class="badge">also a vendor</span>' : ''}${tab === 'vendors' && isCust(c) ? ' <span class="badge">also a customer</span>' : ''}${c.accountStatus === 'closed' ? ' <span class="badge flag">Closed</span>' : ''}</td>
               <td>${esc(c.owner) || '<span class="muted">—</span>'}</td>
               <td>${cewCell(c)}</td>
               <td>${c.cbepEnrolled ? 'Yes' : '<span class="muted">—</span>'}</td>
-              <td class="num"><button type="button" data-a="edit">Edit</button></td>
+              <td class="num nowrap">${isCust(c) ? '<button type="button" data-a="statement">Statement</button> ' : ''}<button type="button" data-a="edit">Edit</button></td>
             </tr>
             <tr class="details-row" data-for="${c.id}" ${openDetailId === c.id ? '' : 'hidden'}><td colspan="5">${details(c)}</td></tr>`).join('')}</tbody>
         </table></div>` : `<p class="muted">${typeFilter ? 'No companies of this type' : 'No open accounts'}${!showClosed && closedCount ? ' — tick "Show closed accounts" to include the closed ones' : ''}.</p>`}
       </div>`);
     el.querySelector('[data-f="closed"]').addEventListener('change', (e) => { showClosed = e.target.checked; App.rerender(); });
+    el.querySelectorAll('[data-tab]').forEach((a) => a.addEventListener('click', () => { tab = a.dataset.tab; typeFilter = ''; openDetailId = null; App.rerender(); }));
     el.querySelector('[data-f="type"]').addEventListener('change', (e) => { typeFilter = e.target.value; openDetailId = null; App.rerender(); });
     el.querySelectorAll('[data-a="details"]').forEach((b) => b.addEventListener('click', () => {
       const id = Number(b.closest('tr').dataset.id);
@@ -417,6 +432,30 @@ App.Pages.companies = (function () {
       openDetailId = open ? id : null;
     }));
     el.querySelectorAll('[data-a="edit"]').forEach((b) => b.addEventListener('click', () => edit(Number(b.closest('tr').dataset.id))));
+    el.querySelectorAll('[data-a="statement"]').forEach((b) => b.addEventListener('click', async () => {
+      const c = data.companies.find((x) => x.id === Number(b.closest('tr').dataset.id)); if (!c) return;
+      const y = new Date().getFullYear();
+      let from = `${y}-01-01`; let to = App.UI.today();
+      const ok = await App.UI.confirmDialog({ title: `Statement — ${c.name}`, confirmLabel: 'Print',
+        html: '<div class="field-row"><div class="field"><label>From</label><input type="date" data-r="from"></div><div class="field"><label>To</label><input type="date" data-r="to"></div></div>',
+        onOpen: (d) => { d.querySelector('[data-r="from"]').value = from; d.querySelector('[data-r="to"]').value = to; },
+        onBeforeClose: (d) => { from = d.querySelector('[data-r="from"]').value || from; to = d.querySelector('[data-r="to"]').value || to; } });
+      if (!ok) return;
+      const full = await App.Store.loadAll();
+      const rows = full.wcs.filter((w) => w.kind === 'transfer' && !w.transfer.selfCollected && (w.transfer.handlerId === c.id || w.transfer.collectorId === c.id) && w.date >= from && w.date <= to)
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+        .map((w) => { const inv = L.invoiceMath({ date: w.date, transfer: w.transfer, mode: w.transfer.mode, priceItems: full.priceItems, company: c }); const tl = w.transfer.timeline || {}; return { w, inv, paid: tl.paid && tl.paid !== 'N/A' ? tl.paid : '' }; });
+      const total = rows.reduce((a, r) => a + r.inv.finalBalance, 0); const paid = rows.filter((r) => r.paid).reduce((a, r) => a + r.inv.finalBalance, 0);
+      const sheet = h(`<div class="doc-sheet print-area" style="position:fixed;inset:0;overflow:auto;z-index:50">
+        <h2>${esc(full.profile.recyclerName || '')} — Statement</h2><p><strong>${esc(c.name)}</strong><br>${esc(c.address || '').replace(/\n/g, '<br>')}</p>
+        <p>${esc(L.shortDate(from))} to ${esc(L.shortDate(to))}</p>
+        <table class="doc-table"><thead><tr><th>Date</th><th>WC #</th><th>IRR #</th><th class="num">Lbs</th><th class="num">Amount</th><th>Paid</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr><td>${esc(L.shortDate(r.w.date))}</td><td>${esc(r.w.wcNumber)}</td><td>${esc(r.w.transfer.irrNumber || '')}</td><td class="num">${L.fmt(L.transferMath(r.w.transfer).irr.weight)}</td><td class="num">${L.money(r.inv.finalBalance)}</td><td>${r.paid ? esc(L.shortDate(r.paid)) : 'open'}</td></tr>`).join('') || '<tr><td colspan="6">No transfers in this range.</td></tr>'}</tbody>
+        <tfoot><tr><th colspan="4">Total</th><th class="num">${L.money(total)}</th><th></th></tr><tr><th colspan="4">Paid</th><th class="num">${L.money(paid)}</th><th></th></tr><tr><th colspan="4">Open</th><th class="num">${L.money(total - paid)}</th><th></th></tr></tfoot></table></div>`);
+      document.getElementById('main-content').append(sheet);
+      const done = () => { sheet.remove(); window.removeEventListener('afterprint', done); };
+      window.addEventListener('afterprint', done); window.print(); setTimeout(done, 60000);
+    }));
     return el;
   }
 

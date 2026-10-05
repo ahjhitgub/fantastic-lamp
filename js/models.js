@@ -3,8 +3,8 @@ window.App = window.App || {};
 
 App.Models = {
   // Bump with every build; the matching notes are in CHANGELOG.md.
-  VERSION: '3.7',
-  VERSION_NAME: 'Change WC type',
+  VERSION: '4.0',
+  VERSION_NAME: 'Streamlining',
 
   CEW_TYPES: ['CRT', 'NonCRT', 'CBEP'],
   CEW_TYPE_LABELS: { CRT: 'CRT', NonCRT: 'Non-CRT', CBEP: 'CBEP (Battery-Embedded)' },
@@ -39,6 +39,8 @@ App.Models = {
     ['wcSigned', 'WC form made & signed'],
     ['form197Signed', '197 form made & signed'],
     ['poSent', 'Purchase order made & sent to customer'],
+    ['allPaperwork', 'All paperwork received'],
+    ['paid', 'Customer paid'],
   ],
 
   // Seeded from your Dec 2024 / Jan 2025 residual summaries; the 196B column

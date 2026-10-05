@@ -28,7 +28,13 @@ App.UI = {
   },
 
   header(title, sub) {
-    return App.UI.h(`<div class="page-header"><h1>${App.UI.esc(title)}</h1>${sub ? `<p>${sub}</p>` : ''}</div>`);
+    const el = App.UI.h(`<div class="page-header"><div class="row"><h1>${App.UI.esc(title)}</h1><button type="button" class="help-btn" data-a="help" title="What this page is for" aria-label="Help">?</button></div>${sub ? `<p>${sub}</p>` : ''}</div>`);
+    el.querySelector('[data-a="help"]').addEventListener('click', () => {
+      const page = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'dashboard';
+      const text = (App.Help && (App.Help[page] || App.Help._default)) || '';
+      App.UI.confirmDialog({ title, html: `<div class="help-text">${text}</div>`, confirmLabel: 'Got it' });
+    });
+    return el;
   },
   empty(title, body) {
     return App.UI.h(`<div class="empty-state"><h3>${App.UI.esc(title)}</h3>${body ? `<p>${body}</p>` : ''}</div>`);
@@ -55,7 +61,7 @@ App.UI = {
         <div><strong>${gaps.missing.length === 1 ? `${label} #${esc(gaps.missing[0])} missing` : `${gaps.missing.length} ${label} #s missing`}</strong>
           <span class="muted"> — between ${label} #${esc(gaps.min)} and #${esc(gaps.max)}</span></div>
         <ul>${shown.map((n) => `<li data-n="${esc(n)}"><span>${label} #${esc(n)} missing</span>
-          ${kind === 'wc' ? '<button type="button" class="small" data-a="void">Record as void</button>' : ''}
+          ${kind === 'wc' ? '<button type="button" class="small" data-a="void">Mark as voided</button>' : ''}
           <button type="button" class="small" data-a="skip">Skipped on purpose</button></li>`).join('')}</ul>
         ${gaps.missing.length > shown.length ? `<div class="muted">…and ${gaps.missing.length - shown.length} more.</div>` : ''}
       </div>`);
@@ -136,16 +142,17 @@ App.UI = {
    * to switch to "All — no claim period" to edit.
    */
   /** A confirmation window: resolves true on Confirm, false on Cancel or Esc. Nothing should be saved until it's true. */
-  confirmDialog({ title, html, confirmLabel = 'Confirm' }) {
+  confirmDialog({ title, html, confirmLabel = 'Confirm', onBeforeClose, onOpen }) {
     return new Promise((resolve) => {
       const d = App.UI.h(`<dialog class="confirm-dialog"><h2>${App.UI.esc(title)}</h2><div class="dlg-body">${html}</div>
         <div class="row"><span class="spacer"></span><button type="button" data-a="cancel">Cancel</button><button type="button" class="primary" data-a="ok">${App.UI.esc(confirmLabel)}</button></div></dialog>`);
       document.body.append(d);
-      const done = (v) => { if (d.open) d.close(); d.remove(); resolve(v); };
+      const done = (v) => { if (onBeforeClose) onBeforeClose(d); if (d.open) d.close(); d.remove(); resolve(v); };
       d.querySelector('[data-a="cancel"]').addEventListener('click', () => done(false));
       d.querySelector('[data-a="ok"]').addEventListener('click', () => done(true));
       d.addEventListener('cancel', (e) => { e.preventDefault(); done(false); });
       d.showModal();
+      if (onOpen) onOpen(d);
     });
   },
 
@@ -225,8 +232,17 @@ App.UI = {
 
     // toolbar above the table: Filter toggle, count, clear
     const bar = UI.h(`<div class="list-bar"><button type="button" class="small" data-a="toggle">Filter</button>
-      <span class="muted" data-role="count"></span><button type="button" class="linklike small" data-a="clear" hidden>Clear filters</button></div>`);
+      <span class="muted" data-role="count"></span><button type="button" class="linklike small" data-a="clear" hidden>Clear filters</button>
+      <span class="spacer"></span><button type="button" class="small" data-a="export" title="Download the rows shown, for Excel">Export CSV</button></div>`);
     (table.closest('.table-scroll') || table).before(bar);
+    bar.querySelector('[data-a="export"]').addEventListener('click', () => {
+      const cell = (c) => { const v = (c.querySelector('select') ? c.querySelector('select').selectedOptions[0]?.textContent : c.querySelector('input:not([type=checkbox])') ? c.querySelector('input').value : c.textContent) || ''; return `"${v.replace(/\s+/g, ' ').trim().replace(/"/g, '""')}"`; };
+      const head = [...table.querySelectorAll('thead tr:first-child th')].map(cell);
+      const rows = [...table.querySelectorAll('tbody tr')].filter((tr) => !tr.hidden && tr.offsetParent !== null && !tr.classList.contains('details-row')).map((tr) => [...tr.children].map(cell).join(','));
+      const blob = new Blob([`\ufeff${[head.join(','), ...rows].join('\r\n')}`], { type: 'text/csv' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${table.dataset.list || 'list'}-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
 
     // filter row: a dropdown for columns with a few distinct values, otherwise a text box
     const fr = document.createElement('tr'); fr.className = 'filter-row';

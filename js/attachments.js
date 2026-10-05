@@ -43,8 +43,8 @@ App.Attachments = (function () {
             <select name="documentType">${typeOptions()}</select>
           </div>
           <div class="field" style="flex:2;">
-            <label>File</label>
-            <input type="file" name="file" required>
+            <label>File <span class="muted">— or take a photo</span></label>
+            <div class="row"><input type="file" name="file"><label class="button photo-btn">📷 Take a photo<input type="file" name="photo" accept="image/*" capture="environment" hidden></label></div>
           </div>
         </form>
         <button type="button" class="primary" data-action="upload">Attach file</button>
@@ -72,7 +72,8 @@ App.Attachments = (function () {
       wrap.querySelector('[data-action="upload"]').addEventListener('click', async () => {
         const form = wrap.querySelector('[data-role="upload-form"]');
         const fd = new FormData(form);
-        const file = fd.get('file');
+        const pick = fd.get('file'); const photo = fd.get('photo');
+        const file = pick && pick.size ? pick : (photo && photo.size ? photo : pick);
         if (!file || !file.name) return;
         await App.DB.add('attachments', {
           linkedEntityType,
@@ -99,6 +100,8 @@ App.Attachments = (function () {
       wrap.querySelectorAll('[data-remove]').forEach((btn) => {
         btn.addEventListener('click', async () => {
           if (!confirm('Remove this attachment?')) return;
+          const doomed = await App.DB.get('attachments', Number(btn.dataset.remove));
+          if (doomed) await App.Store.toTrash('attachment', doomed.filename || 'Attachment', doomed);
           await App.DB.delete('attachments', Number(btn.dataset.remove));
           await refresh();
         });

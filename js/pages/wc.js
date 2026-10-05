@@ -73,6 +73,8 @@ App.Pages.wc = (function () {
           LINKED_STEPS.forEach((k) => { draft.transfer.timeline[k] = draft.date || ''; });
         }
         const oldLot = L().normLot(saved.wcNumber); const newLot = L().normLot(number);
+        const changes = L().changedFields(saved, draft);
+        if (changes.length) draft.history = [{ at: new Date().toISOString(), changes }, ...(saved.history || [])].slice(0, 200);
         await App.DB.put('wcs', draft);
         if (draft.kind === 'transfer' && oldLot !== newLot) {
           const units = await App.DB.getAllByIndex('cancelledUnits', 'lotNumber', oldLot);
@@ -134,7 +136,7 @@ App.Pages.wc = (function () {
         const prevCompanyId = draft.companyId;
         if (f === 'recordAs') {
           draft.noWc = v === 'general';
-          draft.wcNumber = draft.noWc ? '' : (draft.wcNumber || L().nextWcNumber(data.wcs.filter((w) => w.id !== draftId)));
+          draft.wcNumber = draft.noWc ? '' : (draft.wcNumber || L().nextWcNumber(data.allWcs.filter((w) => w.id !== draftId)));
           dirty = true; App.rerender(); return;
         }
         if (f === 'statusId' || f === 'companyId') draft[f] = v ? Number(v) : null;
@@ -186,7 +188,7 @@ App.Pages.wc = (function () {
             ? `<div class="readonly">${usCollector}</div><div class="hint">${t.selfCollected ? 'Dual Entity: we\'re the collector and the recycler.' : 'We\'re the collector whenever a handler is selected.'}</div>`
             : `<select data-f="collectorId">${pick('collector', t.collectorId)}</select>`}</div>
           <div class="field"><label>Recycler</label><div class="readonly">${us}</div></div>
-          <div class="field"><label>Material was</label><select data-f="mode">${options([{ value: 'dropoff', label: 'Dropped off' }, { value: 'pickup', label: 'Picked up' }], t.mode, '— choose —')}</select></div>
+          ${draft.transfer && draft.transfer.selfCollected ? '' : `<div class="field"><label>Material was</label><select data-f="mode">${options([{ value: 'dropoff', label: 'Dropped off' }, { value: 'pickup', label: 'Picked up' }], t.mode, '— choose —')}</select></div>`}
           <div class="field"><label>Transfer type</label><select data-tt="transferType">${options(L().TRANSFER_TYPES.map(([value, label]) => ({ value, label })), t.transferType || 'cew')}</select></div>
         </div>
         <div data-role="type-issues"></div>
@@ -234,13 +236,14 @@ App.Pages.wc = (function () {
 
   // ---------------------------------------------------------------- transfer: IRR → WC lines
   function buildLines(data, bar, onChange) {
+    const weightNorms = L().unitWeightNorms(data.wcs.filter((w) => w.id !== draftId));   // usual lbs per unit, learned from other transfers
     const { h, esc, fmt } = U();
     const t = draft.transfer;
     // lines saved before gross/tare existed only have a net weight: show it as gross with no tare
     t.lines.forEach((l) => { if (l.irrGross === undefined) { l.irrGross = l.irrWeight ?? ''; l.irrTare = ''; } });
     const otherItems = data.priceItems.filter((p) => p.appliesTo === 'other');
     const byNames = [...new Set(data.wcs.filter((w) => w.kind === 'transfer' && w.transfer && w.transfer.irrBy).map((w) => w.transfer.irrBy))];
-    const nextIrr = L().nextIrrNumber(data.wcs.filter((w) => w.id !== draftId));
+    const nextIrr = L().nextIrrNumber(data.allWcs.filter((w) => w.id !== draftId));
     const plates = App.Store.plateChoices({ direction: 'in', mode: t.mode, company: App.Store.transferParties(draft, data).customer, profile: data.profile });
     // CBEP is listed by item (CBEP Computer Towers, CBEP Printers, …) — each is bought at its own rate
     const cbepItems = L().cbepItems(data.priceItems);
@@ -271,8 +274,8 @@ App.Pages.wc = (function () {
       <div class="panel">
         <h2>Inbound receiving report → WC</h2>
         <div class="field-row">
-          <div class="field"><label>IRR #</label><input data-r="irrNumber" value="${esc(t.irrNumber)}">
-            ${!t.irrNumber && nextIrr ? `<button type="button" class="linklike" data-a="next-irr">use next: ${esc(nextIrr)}</button>` : ''}</div>
+          ${t.selfCollected ? (t.irrNumber ? `<div class="field"><label>IRR #</label><div class="readonly">${esc(t.irrNumber)} <span class="muted">(kept from before; Dual Entity transfers don't take one)</span></div></div>` : '') : `<div class="field"><label>IRR #</label><input data-r="irrNumber" value="${esc(t.irrNumber)}">
+            ${!t.irrNumber && nextIrr ? `<button type="button" class="linklike" data-a="next-irr">use next: ${esc(nextIrr)}</button>` : ''}</div>`}
           <div class="field"><label>Shipping date <span class="muted">(blank = WC date)</span></label><input type="date" data-r="shippingDate" value="${esc(t.shippingDate)}"></div>
           <div class="field"><label>License plate <span class="muted">(${esc(plates.whose)})</span></label><input data-r="licensePlate" list="irr-plates" value="${esc(t.licensePlate)}"></div>
           <div class="field"><label>Inbound report by</label><input data-r="irrBy" list="irr-by-names" value="${esc(t.irrBy)}"></div>
@@ -322,7 +325,7 @@ App.Pages.wc = (function () {
         if (!L().category(l.category).cew && (L().num(l.irrUnits) || L().num(l.irrWeight)) && !String(l.description || '').trim()) extra.push(`Line ${i + 1}: give this Other (non-CEW) item a description — it's printed on the IRR, WC and purchase invoice`);
         if (L().num(l.irrTare) > L().num(l.irrGross)) extra.push(`Line ${i + 1}: tare is more than gross`);
       });
-      problemsEl.replaceChildren(...math.problems.concat(extra, L().transferTypeIssues(t)).map((p) => U().notice(p, 'warning')));
+      problemsEl.replaceChildren(...math.problems.concat(extra, L().transferTypeIssues(t), L().unitWeightIssues(t, weightNorms)).map((p) => U().notice(p, 'warning')));
       const wcRows = L().documentRows(t, data.priceItems);
       previewEl.replaceChildren(wcRows.length
         ? U().h(`<table><thead><tr><th>Description</th><th class="num">Units</th><th class="num">Lbs</th></tr></thead><tbody>${
@@ -374,7 +377,7 @@ App.Pages.wc = (function () {
   function buildTimeline(bar) {
     const { h, esc } = U();
     const tl = draft.transfer.timeline = draft.transfer.timeline || {};
-    const steps = App.Models.TRANSFER_TIMELINE;
+    const steps = App.Models.TRANSFER_TIMELINE.filter(([k]) => !(draft.transfer.selfCollected && ['irrMade', 'poSent', 'allPaperwork', 'paid'].includes(k)));
     const el = h(`
       <div class="panel">
         <h2>Timeline <span class="muted" data-role="progress"></span></h2>
@@ -551,7 +554,7 @@ App.Pages.wc = (function () {
     const el = h('<div class="panel"></div>');
     const otherItems = data.priceItems.filter((p) => p.appliesTo === 'other');
     const field = (r) => (r.part === 'cew' ? 'cewRate' : r.part === 'noncew' ? 'nonCewRate' : 'rate');
-    const compute = () => L().invoiceMath({ transfer: draft.transfer, mode: draft.transfer.mode, priceItems: data.priceItems, company: App.Store.transferParties(draft, data).customer });
+    const compute = () => L().invoiceMath({ date: draft.date, transfer: draft.transfer, mode: draft.transfer.mode, priceItems: data.priceItems, company: App.Store.transferParties(draft, data).customer });
     const sourceText = (r) => r.source + (r.rate !== null && r.source !== 'Set at inspection' ? ` · ${L().rateText(r.rate)}/${r.basis}` : '');
 
     function recalc() {
@@ -636,7 +639,7 @@ App.Pages.wc = (function () {
     const autoEl = el.querySelector('[data-role="auto"]');
     const body = el.querySelector('tbody');
     function refresh(fromPricing) {
-      const inv = L().invoiceMath({ transfer: t, mode: t.mode, priceItems: data.priceItems, company: App.Store.transferParties(draft, data).customer });
+      const inv = L().invoiceMath({ date: draft.date, transfer: t, mode: t.mode, priceItems: data.priceItems, company: App.Store.transferParties(draft, data).customer });
       const auto = inv.deductions.filter((d) => d.auto);
       autoEl.replaceChildren(h(auto.length
         ? `<ul class="auto-deds">${auto.map((d) => `<li>${esc(d.description)}: ${fmt(d.quantity)} × ${d.rate === null ? '<span class="flag-text">rate needed</span>' : L().rateText(d.rate)} = <strong>${L().money(d.amount)}</strong> <span class="muted">— ${esc(d.reason)}</span></li>`).join('')}</ul>`
@@ -713,7 +716,8 @@ App.Pages.wc = (function () {
         <div class="field"><label>Collection activity</label><input data-h="activity" value="${esc(hd.activity || '')}"></div>
         <div class="field"><label>Location of collection event</label><input data-h="location" value="${esc(hd.location || '')}"></div></div>` : ''}
       <div data-role="grid"></div>
-      <div class="row"><button type="button" data-a="add">+ Add entry</button>${log ? `<span class="spacer"></span><button type="button" class="danger" data-a="clear">Remove the 198 ${KEY} entries</button>` : ''}</div>
+      <div class="row"><button type="button" data-a="add">+ Add entry</button>${key === 'o' && log ? '<button type="button" data-a="adj-request">Draft adjustment request</button>' : ''}${log ? `<span class="spacer"></span><button type="button" class="danger" data-a="clear">Remove the 198 ${KEY} entries</button>` : ''}</div>
+      ${key === 'o' && t.adjustmentRequested && !(t.logs && t.logs.a) ? `<p class="flag-text">Adjustment request sent ${esc(L().shortDate(t.adjustmentRequested))} — waiting ${Math.max(0, Math.round((Date.parse(App.UI.today()) - Date.parse(t.adjustmentRequested)) / 86400000))} day(s) for the 198 A.</p>` : ''}
       <div data-role="issues"></div>
       <div data-role="files"></div>
     </div>`));
@@ -730,6 +734,11 @@ App.Pages.wc = (function () {
       const tot = lg ? L().logTotals(lg.rows) : { crt: 0, noncrt: 0, cbep: 0 };
       const f = grid.querySelector('[data-role="tot"]'); if (f) f.textContent = `${fmt(tot.crt)} · ${fmt(tot.noncrt)} · ${fmt(tot.cbep)}`;
     };
+    const custId = t.handlerId || t.collectorId;
+    const known = new Map();
+    data.wcs.filter((w) => w.id !== saved.id && w.kind === 'transfer' && w.transfer && custId && (w.transfer.handlerId === custId || w.transfer.collectorId === custId))
+      .forEach((w) => ['o', 'a'].forEach((k) => ((w.transfer.logs && w.transfer.logs[k] && w.transfer.logs[k].rows) || []).forEach((r) => { if (r.name && !known.has(r.name)) known.set(r.name, r); })));
+    const listId = `known-src-${saved.id}-${key}`;
     const drawGrid = () => {
       const lg = t.logs[key];
       if (!lg || !lg.rows.length) { grid.replaceChildren(h(`<p class="muted">No 198 ${KEY} entries yet.</p>`)); return; }
@@ -737,9 +746,9 @@ App.Pages.wc = (function () {
       const tbl = h(`<div class="table-scroll"><table class="lines log-grid"><thead><tr><th>#</th><th>Date</th><th>Type</th><th>Name</th><th>Address, City, State, Zip</th><th>Contact person name & phone</th><th class="num">CRT</th><th class="num">Non-CRT</th><th class="num">CBEP</th><th></th></tr></thead>
         <tbody>${lg.rows.map((r, i) => `<tr data-i="${i}"><td class="muted">${i + 1}</td>
           <td><input data-c="date" value="${esc(r.date)}" style="width:92px"></td><td><select data-c="type">${typeOpts(r.type)}</select></td>
-          <td><input data-c="name" value="${esc(r.name)}"></td><td><input data-c="address" value="${esc(r.address)}" style="min-width:220px"></td><td><input data-c="contact" value="${esc(r.contact)}"></td>
+          <td><input data-c="name" list="${listId}" value="${esc(r.name)}"></td><td><input data-c="address" value="${esc(r.address)}" style="min-width:220px"></td><td><input data-c="contact" value="${esc(r.contact)}"></td>
           <td><input data-c="crt" inputmode="numeric" value="${r.crt || ''}" style="width:56px"></td><td><input data-c="noncrt" inputmode="numeric" value="${r.noncrt || ''}" style="width:56px"></td><td><input data-c="cbep" inputmode="numeric" value="${r.cbep || ''}" style="width:56px"></td>
-          <td><button type="button" class="ghost" data-a="del" title="Remove this entry">✕</button></td></tr>`).join('')}</tbody>
+          <td class="nowrap"><button type="button" class="ghost" data-a="dup" title="Copy this entry below">⧉</button><button type="button" class="ghost" data-a="del" title="Remove this entry">✕</button></td></tr>`).join('')}</tbody>
         <tfoot><tr><th colspan="6">Totals (CRT · Non-CRT · CBEP)</th><th colspan="3" class="num" data-role="tot"></th><th></th></tr></tfoot></table></div>`);
       tbl.querySelectorAll('tbody tr').forEach((tr) => {
         const r = lg.rows[Number(tr.dataset.i)];
@@ -749,7 +758,23 @@ App.Pages.wc = (function () {
           bar.markDirty(); showIssues();
         }));
         tr.querySelector('[data-a="del"]').addEventListener('click', () => { lg.rows.splice(Number(tr.dataset.i), 1); bar.markDirty(); redraw(); });
+        tr.querySelector('[data-a="dup"]').addEventListener('click', () => { const i = Number(tr.dataset.i); lg.rows.splice(i + 1, 0, { ...lg.rows[i], crt: 0, noncrt: 0, cbep: 0 }); bar.markDirty(); redraw(); });
+        // picking a remembered name fills in its address, contact and type
+        const nm = tr.querySelector('[data-c="name"]');
+        nm.addEventListener('change', () => {
+          const k = known.get(nm.value); if (!k || r.address) return;
+          ['address', 'contact', 'type'].forEach((c) => { r[c] = k[c] || ''; const inp = tr.querySelector(`[data-c="${c}"]`); if (inp) inp.value = c === 'type' ? L().sourceType(k.type) : (k[c] || ''); });
+          bar.markDirty(); showIssues();
+        });
+        // Enter: same column, next row (a new row after the last)
+        tr.querySelectorAll('input[data-c]').forEach((inp) => inp.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter') return; e.preventDefault();
+          const i = Number(tr.dataset.i); const c = inp.dataset.c;
+          if (i === lg.rows.length - 1) { const last = lg.rows[i]; lg.rows.push({ date: last.date, type: last.type, name: '', address: '', contact: '', crt: 0, noncrt: 0, cbep: 0 }); bar.markDirty(); redraw(); }
+          const next = grid.querySelector(`tbody tr[data-i="${i + 1}"] [data-c="${c === 'date' ? 'name' : c}"]`); if (next) next.focus();
+        }));
       });
+      tbl.append(h(`<datalist id="${listId}">${[...known.keys()].slice(0, 500).map((n) => `<option value="${esc(n)}">`).join('')}</datalist>`));
       grid.replaceChildren(tbl);
     };
     drawGrid(); showIssues();
@@ -757,6 +782,20 @@ App.Pages.wc = (function () {
       const lg = ensure(); const last = lg.rows[lg.rows.length - 1];
       lg.rows.push({ date: last ? last.date : '', type: last ? last.type : 'R', name: '', address: '', contact: '', crt: 0, noncrt: 0, cbep: 0 });
       bar.markDirty(); redraw();
+    });
+    const reqBtn = body.querySelector('[data-a="adj-request"]');
+    if (reqBtn) reqBtn.addEventListener('click', async () => {
+      const P = App.Store.transferParties(draft, data); const cust = P.customer;
+      const issues = L().logIssues(t.logs.o, t).filter((x) => x.kind !== 'info');
+      const subject = `198 adjustments needed — WC #${draft.wcNumber}`;
+      const text = `Hello${cust && cust.admin ? ` ${cust.admin}` : ''},\n\nFor WC #${draft.wcNumber} (received ${L().shortDate(draft.date)}), the 198 O needs these corrections before we can complete the transfer:\n\n${issues.length ? issues.map((x) => `- ${x.text}`).join('\n') : '- (list the corrections here)'}\n\nPlease send a corrected 198 A. Thank you,\n${data.profile.recyclerName || ''}`;
+      const ok = await App.UI.confirmDialog({ title: 'Adjustment request',
+        html: `<p class="muted mt-0">Copy it into an email${cust && cust.email ? ` to ${esc(cust.email)}` : ''}, or open it in your mail app.</p><textarea rows="12" style="width:100%" data-role="req">${esc(text)}</textarea>
+          <div class="row"><button type="button" data-a="copy">Copy</button>${cust && cust.email ? `<a class="button" href="mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}">Open in mail app</a>` : ''}</div>`,
+        confirmLabel: 'Mark as requested today',
+        onOpen: (d) => d.querySelector('[data-a="copy"]').addEventListener('click', async () => { try { await navigator.clipboard.writeText(d.querySelector('[data-role="req"]').value); d.querySelector('[data-a="copy"]').textContent = 'Copied'; } catch (e) { d.querySelector('[data-role="req"]').select(); } }) });
+      if (!ok) return;
+      t.adjustmentRequested = App.UI.today(); bar.markDirty(); redraw();
     });
     const clearBtn = body.querySelector('[data-a="clear"]');
     if (clearBtn) clearBtn.addEventListener('click', () => { if (!window.confirm(`Remove every entry of the 198 ${KEY}? Attached files stay.`)) return; t.logs[key] = null; bar.markDirty(); redraw(); });
@@ -916,7 +955,7 @@ App.Pages.wc = (function () {
   function buildDocuments(saved, data) {
     const { h } = U();
     const P = App.Store.transferParties(saved, data);
-    const inv = L().invoiceMath({ transfer: saved.transfer, mode: saved.transfer.mode, priceItems: data.priceItems, company: P.customer });
+    const inv = L().invoiceMath({ date: saved.date, transfer: saved.transfer, mode: saved.transfer.mode, priceItems: data.priceItems, company: P.customer });
     const noDesc = (saved.transfer.lines || []).some((l) => !L().category(l.category).cew && (L().num(l.irrUnits) || L().num(l.irrWeight)) && !String(l.description || '').trim());
     const warn = [
       dirty && 'You have unsaved changes — documents are built from the saved WC.',
@@ -1064,7 +1103,7 @@ App.Pages.wc = (function () {
         <p class="muted mt-0">Use the vendor's description. Picking one from the list fills in whether it's CEW and which residual it counts as; a new description is added to the
           <a href="#/descriptions">vendor description list</a> when you save. Only lines marked CEW count toward residuals.</p>
         <div class="table-scroll"><table class="lines ship">
-          <thead><tr><th class="num" data-role="countHead">${draft.shipment.countLabel === 'skids' ? 'Skids' : 'Units'}</th><th>Description</th>${draft.shipment.shipmentType === 'both' ? '<th>Program</th>' : ''}<th>CEW?</th><th>Counts as residual</th><th class="num">Gross</th><th class="num">Tare</th><th class="num">Net</th><th></th></tr></thead>
+          <thead><tr><th class="num" data-role="countHead">${draft.shipment.countLabel === 'skids' ? 'Skids' : 'Units'}</th><th>Description</th><th>Counts as residual</th><th class="num">Gross</th><th class="num">Tare</th><th class="num">Net</th><th></th></tr></thead>
           <tbody></tbody>
           <tfoot><tr><th colspan="6">Total net <span class="muted" data-role="split"></span></th><th class="num" data-role="total"></th><th></th></tr></tfoot>
         </table></div>
@@ -1082,15 +1121,16 @@ App.Pages.wc = (function () {
     });
     const totalEl = el.querySelector('[data-role="total"]'); const splitEl = el.querySelector('[data-role="split"]');
     const refresh = () => {
-      const cew = lines.filter((l) => l.cew !== false).reduce((s2, l) => s2 + L().lineNet(l), 0);
-      const non = lines.filter((l) => l.cew === false).reduce((s2, l) => s2 + L().lineNet(l), 0);
+      // a line counts when it has a residual ("Counts as"); "— none —" is shipped but not a residual
+      const cew = lines.filter((l) => l.materialId != null).reduce((s2, l) => s2 + L().lineNet(l), 0);
+      const non = lines.filter((l) => l.materialId == null).reduce((s2, l) => s2 + L().lineNet(l), 0);
       totalEl.textContent = fmt(cew + non);
       const issues = L().shipmentIssues(draft, data.materials);
       el.querySelector('[data-role="ship-issues"]').replaceChildren(...issues.map((x) => U().notice(x.text, x.kind)));
       const printed = L().shipmentRows(draft, data.materials);
       el.querySelector('[data-role="prints"]').innerHTML = printed.length && (draft.shipment.shipmentType || 'cew') !== 'cew'
         ? `Prints on the WC as: ${printed.map((r) => `<strong>${esc(r.label)}</strong> ${fmt(r.net)} lbs`).join(' · ')}` : '';
-      splitEl.textContent = non ? `— CEW ${fmt(cew)} · non-CEW ${fmt(non)} (not counted as residuals)` : '';
+      splitEl.textContent = non ? `— residuals ${fmt(cew)} · "— none —" ${fmt(non)} (shipped, not counted)` : '';
       if (onChange) onChange();
     };
     function makeRow(line) {
@@ -1098,24 +1138,20 @@ App.Pages.wc = (function () {
       const tr = h(`<tr>
         <td><input data-f="count" type="text" inputmode="numeric" placeholder="Wt. Only" style="width:80px"></td>
         <td><input data-f="description" list="ship-descs" style="min-width:200px" placeholder="vendor's description"></td>
-        ${draft.shipment.shipmentType === 'both' ? `<td class="muted" data-role="prog">${esc(L().lineProgram(draft, line, data.materials) === 'cbep' ? 'CBEP' : 'CEW Non-CRT')}</td>` : ''}
-        <td><label class="row"><input type="checkbox" data-f="cew"> CEW</label></td>
+
         <td><select data-f="materialId">${matOpts(line.materialId)}</select></td>
         <td><input data-f="gross" type="text" inputmode="decimal" step="any" min="0"></td><td><input data-f="tare" type="text" inputmode="decimal" step="any" min="0"></td><td><input data-f="net" type="text" inputmode="decimal" step="any" min="0"></td>
         <td><button type="button" class="ghost" data-a="remove" title="Remove">✕</button></td></tr>`);
       const $ = (f) => tr.querySelector(`[data-f="${f}"]`);
       $('description').value = line.description || '';
-      $('cew').checked = line.cew !== false;
       ['gross', 'tare', 'net', 'count'].forEach((f) => { $(f).value = line[f] ?? ''; });
       $('count').addEventListener('input', () => { line.count = $('count').value.trim(); bar.markDirty(); });
       $('description').addEventListener('input', () => {
         line.description = $('description').value;
         const d = find(line.description);
-        if (d) { line.cew = d.cew !== false; line.materialId = d.materialId ?? null; $('cew').checked = line.cew; $('materialId').value = line.materialId ?? ''; }
+        if (d) { line.materialId = d.cew === false ? null : (d.materialId ?? null); $('materialId').value = line.materialId ?? ''; }
         bar.markDirty(); refresh();
       });
-      $('cew').addEventListener('change', () => { line.cew = $('cew').checked; bar.markDirty(); refresh(); });
-      if ($('program')) $('program').addEventListener('change', () => { line.program = $('program').value; bar.markDirty(); refresh(); });
       $('materialId').addEventListener('change', () => { line.materialId = $('materialId').value ? Number($('materialId').value) : null; bar.markDirty(); refresh(); });
       ['gross', 'tare', 'net'].forEach((f) => $(f).addEventListener('input', () => {
         line[f] = $(f).value;
@@ -1138,12 +1174,31 @@ App.Pages.wc = (function () {
     return el;
   }
 
+  // ---------------------------------------------------------------- voiding a WC (it keeps its number; counts in nothing)
+  async function openVoid(saved, data) {
+    const { esc } = U();
+    if (dirty) { window.alert('Save or discard your changes to this WC first.'); return; }
+    const block = App.Store.typeChangeBlockers(saved, { kind: '__void__' }, data, await App.DB.getAll('cancelledUnits'));
+    if (block.length) {
+      await App.UI.confirmDialog({ title: `WC #${saved.wcNumber} can't be voided yet`, html: `<div class="notice error"><ul>${block.map((b) => `<li>${esc(b)}</li>`).join('')}</ul></div>`, confirmLabel: 'OK' });
+      return;
+    }
+    let reason = '';
+    const ok = await App.UI.confirmDialog({ title: `Void WC #${saved.wcNumber}?`,
+      html: `<p>It keeps WC #${esc(saved.wcNumber)} in the sequence (the number is never reused) and its details, shows VOID everywhere and prints with VOID across it, and counts in no total, claim or to-do. <strong>Un-void</strong> brings it back.</p>
+        <div class="field"><label>Reason <span class="muted">(optional)</span></label><input data-role="void-reason"></div>`,
+      confirmLabel: 'Void it', onBeforeClose: (d) => { const i = d.querySelector('[data-role="void-reason"]'); reason = i ? i.value : ''; } });
+    if (!ok) return;
+    try { await App.Store.voidWc(saved.id, reason); App.Pages.wc.reset(); setFlash(`WC #${saved.wcNumber} is void.`, 'ok'); } catch (err) { setFlash(U().errText(err), 'error'); }
+    App.rerender();
+  }
+
   // ---------------------------------------------------------------- changing a WC's type (after a mistake)
   async function openTypeChange(saved, data) {
     const { h, esc } = U();
     if (dirty) { window.alert('Save or discard your changes to this WC first.'); return; }
     const units = await App.DB.getAll('cancelledUnits');
-    const types = data.wcTypes.filter((t) => t.id !== saved.typeId && t.kind !== 'crtShipment');
+    const types = data.wcTypes.filter((t) => t.id !== saved.typeId && t.kind !== 'crtShipment' && !/^void$/i.test(String(t.name).trim()));
     const cur = data.wcTypes.find((t) => t.id === saved.typeId);
     const kindName = (k) => App.Store.KIND_NAMES[k || 'generic'] || 'WC';
     const d = h(`<dialog class="confirm-dialog"><h2>Change the type of WC #${esc(saved.wcNumber)}</h2>
@@ -1385,7 +1440,7 @@ App.Pages.wc = (function () {
     async render(container) {
       const id = Number(App.State.routeParams[0]);
       const data = await App.Store.loadAll();
-      const saved = data.wcs.find((w) => w.id === id);
+      const saved = data.allWcs.find((w) => w.id === id);   // voided WCs open too
       if (!saved) {
         container.append(U().header('Weight certificate'), U().empty('WC not found', '<a href="#/wcs">Back to all weight certificates</a>'));
         return;
@@ -1408,10 +1463,17 @@ App.Pages.wc = (function () {
         ? U().header('Inventory entry (no WC)', `End-of-month inventory · ${U().esc(forMonth && forMonth[0] ? L().monthLabel(forMonth[0], forMonth[1]) : '')}`)
         : U().header(`WC #${saved.wcNumber}`, U().esc(type ? type.name : 'Weight certificate')));
       if (!saved.noWc && saved.wcNumber && saved.kind !== 'crtShipment') {
+        if (saved.voided) container.append(U().h(`<div class="notice error void-banner"><strong>VOID</strong> — ${saved.voided.numberOnly ? 'this WC # was voided on paper; it stays in the sequence and is never reused' : 'this WC is voided: it keeps its number but counts in nothing'}${saved.voided.reason ? ` · ${U().esc(saved.voided.reason)}` : ''}${saved.voided.date ? ` · ${U().esc(L().shortDate(saved.voided.date))}` : ''}</div>`));
         const row = U().h(`<div class="row print-row"><a class="button" href="#/doc/${saved.id}/wc">Print WC #${U().esc(saved.wcNumber)}</a>
-          <button type="button" data-a="change-type">Change type</button>
+          ${saved.voided ? (saved.voided.numberOnly ? '' : '<button type="button" data-a="unvoid">Un-void</button>') : '<button type="button" data-a="change-type">Change type</button><button type="button" class="danger" data-a="void">Void WC</button>'}
           ${(saved.typeHistory || []).length ? `<span class="muted">Type changed: ${saved.typeHistory.map((x) => `${U().esc(x.from)} → ${U().esc(x.to)} (${U().esc(L().shortDate(x.date))})`).join('; ')}</span>` : ''}</div>`);
-        row.querySelector('[data-a="change-type"]').addEventListener('click', () => openTypeChange(saved, data));
+        const ct = row.querySelector('[data-a="change-type"]'); if (ct) ct.addEventListener('click', () => openTypeChange(saved, data));
+        const vb = row.querySelector('[data-a="void"]'); if (vb) vb.addEventListener('click', () => openVoid(saved, data));
+        const ub = row.querySelector('[data-a="unvoid"]'); if (ub) ub.addEventListener('click', async () => {
+          if (!window.confirm(`Un-void WC #${saved.wcNumber}? It counts again everywhere.`)) return;
+          try { await App.Store.unvoidWc(saved.id); App.Pages.wc.reset(); setFlash(`WC #${saved.wcNumber} is no longer void.`, 'ok'); } catch (err) { setFlash(U().errText(err), 'error'); }
+          App.rerender();
+        });
         container.append(row);
       }
       if (flash) { container.append(U().notice(flash.text, flash.kind)); flash = null; }
@@ -1421,7 +1483,9 @@ App.Pages.wc = (function () {
         const pricing = buildPricing(data, bar);
         const po = buildPurchaseInvoice(data, bar, pricing);
         const onLines = () => { pricing.rebuild(); po.refresh(); };
-        container.append(buildParties(data, bar), buildLines(data, bar, onLines), pricing.el, po.el, buildTimeline(bar), buildAllocations(saved, data, allocs), buildLogs198(saved, data, bar), buildForm197(data, bar), buildLogPanel(saved, bar), buildDocuments(saved, data));
+        const dual = !!draft.transfer.selfCollected;
+        if (dual && draft.transfer.mode !== 'dropoff') draft.transfer.mode = 'dropoff';
+        container.append(buildParties(data, bar), buildLines(data, bar, onLines), ...(dual ? [] : [pricing.el, po.el]), buildTimeline(bar), buildAllocations(saved, data, allocs), buildLogs198(saved, data, bar), buildForm197(data, bar), buildLogPanel(saved, bar), buildDocuments(saved, data));
       } else if (saved.kind === 'inventory') {
         container.append(buildInventory(data, bar));
       } else if (saved.kind === 'shipment') {
@@ -1436,6 +1500,10 @@ App.Pages.wc = (function () {
         container.append(buildGeneration(data, bar));
       } else if (saved.kind === 'generic') {
         const logEl = buildLogPanel(saved, bar); if (logEl) container.append(logEl);
+      }
+      if ((saved.history || []).length) {
+        container.append(U().h(`<details class="panel wc-history"><summary><strong>History</strong> <span class="muted">— ${saved.history.length} save${saved.history.length === 1 ? '' : 's'} with changes</span></summary>
+          <ul class="changes">${saved.history.slice(0, 60).map((x) => `<li><strong>${U().esc(new Date(x.at).toLocaleString())}</strong>: ${x.changes.slice(0, 12).map((c) => `${U().esc(c.field)} ${U().esc(String(c.from).slice(0, 40))} → ${U().esc(String(c.to).slice(0, 40))}`).join('; ')}${x.changes.length > 12 ? ` … and ${x.changes.length - 12} more` : ''}</li>`).join('')}</ul></details>`));
       }
       const docs = document.createElement('div');
       container.append(docs);

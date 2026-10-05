@@ -20,7 +20,8 @@ App.Store = (function () {
     priceItems.sort((a, b) => (keyOrder.indexOf(a.appliesTo) - keyOrder.indexOf(b.appliesTo)) || String(a.name).localeCompare(b.name));
     const skippedRec = (await App.DB.get('meta', 'skippedNumbers')) || {};
     const skipped = { wc: skippedRec.wc || [], irr: skippedRec.irr || [] };
-    return { wcs, companies, periods, allocations, wcTypes, wcStatuses, materials, priceItems, shipDescriptions, profile, skipped };
+    // voided WCs keep their numbers (allWcs: sequences, lists) but count in nothing (wcs: every total and claim)
+    return { wcs: wcs.filter((w) => !w.voided), allWcs: wcs, companies, periods, allocations, wcTypes, wcStatuses, materials, priceItems, shipDescriptions, profile, skipped };
   }
 
   /**
@@ -356,6 +357,24 @@ App.Store = (function () {
     await App.DB.put('meta', rec);
   }
   /** Record a skipped WC # as a void WC (like "void" rows in the WC log). */
+  /** A WC (or a number whose paper WC was voided) marked VOID: it keeps its number in the sequence and counts in nothing. */
+  async function voidWc(id, reason) {
+    const w = await App.DB.get('wcs', id);
+    const data = await loadAll(); const units = await App.DB.getAll('cancelledUnits');
+    const block = typeChangeBlockers(w, { kind: '__void__' }, data, units);
+    if (block.length) throw new Error(block.join(' '));
+    w.voided = { date: App.UI.today(), reason: String(reason || '').trim(), numberOnly: false };
+    await App.DB.put('wcs', w);
+  }
+  async function unvoidWc(id) {
+    const w = await App.DB.get('wcs', id);
+    if (w.voided && w.voided.numberOnly) throw new Error('A voided number has nothing behind it to bring back.');
+    delete w.voided; await App.DB.put('wcs', w);
+  }
+  async function markNumberVoided(number) {
+    const w = (await App.DB.getAll('wcs')).find((x) => String(x.wcNumber) === String(number));
+    if (w && !w.voided) { w.voided = { date: App.UI.today(), reason: 'Paper WC voided', numberOnly: true }; await App.DB.put('wcs', w); }
+  }
   async function recordVoidWc(number) {
     let type = (await App.DB.getAll('wcTypes')).find((t) => t.name === 'Void');
     if (!type) { type = { name: 'Void', kind: 'generic', builtin: false }; type.id = await App.DB.add('wcTypes', type); }
@@ -363,11 +382,41 @@ App.Store = (function () {
     const wc = await App.DB.get('wcs', id);
     wc.notes = 'Recorded as void — this WC # was skipped.';
     await App.DB.put('wcs', wc);
+    await markNumberVoided(number);
     return id;
   }
 
+  // ---------------------------------------------------------------- recycle bin (30 days)
+  async function trash() { return ((await App.DB.get('meta', 'trash')) || { items: [] }).items; }
+  async function toTrash(kind, label, record, related = {}) {
+    const items = await trash();
+    items.unshift({ id: Date.now() + Math.random(), kind, label, record, related, deletedAt: new Date().toISOString() });
+    await App.DB.put('meta', { key: 'trash', items: items.slice(0, 500) });
+  }
+  async function restoreFromTrash(trashId) {
+    const items = await trash(); const it = items.find((x) => x.id === trashId);
+    if (!it) throw new Error('That item is no longer in the recycle bin.');
+    if (it.kind === 'wc') {
+      if (await wcNumberTaken(it.record.wcNumber)) throw new Error(`WC #${it.record.wcNumber} has been used again since — it can't come back with that number.`);
+      await App.DB.put('wcs', it.record);
+      for (const a of it.related.allocations || []) await App.DB.put('transferAllocations', a);
+      for (const d of it.related.attachments || []) await App.DB.put('attachments', d);
+    } else if (it.kind === 'company') await App.DB.put('companies', it.record);
+    else if (it.kind === 'attachment') await App.DB.put('attachments', it.record);
+    await App.DB.put('meta', { key: 'trash', items: items.filter((x) => x.id !== trashId) });
+    return it;
+  }
+  async function purgeTrash() {
+    const items = await trash(); const cutoff = Date.now() - 30 * 86400000;
+    const keep = items.filter((x) => Date.parse(x.deletedAt) > cutoff);
+    if (keep.length !== items.length) await App.DB.put('meta', { key: 'trash', items: keep });
+  }
+
   async function deleteWC(id) {
+    const rec = await App.DB.get('wcs', id);
     const allocs = await App.DB.getAllByIndex('transferAllocations', 'wcId', id);
+    const attached = (await App.DB.getAllByIndex('attachments', 'linkedEntityId', id)).filter((d) => d.linkedEntityType === 'wc');
+    if (rec) await toTrash('wc', `WC #${rec.wcNumber || '(no #)'}`, rec, { allocations: allocs, attachments: attached });
     await App.DB.bulkDelete('transferAllocations', allocs.map((a) => a.id));
     const docs = (await App.DB.getAllByIndex('attachments', 'linkedEntityId', id)).filter((d) => d.linkedEntityType === 'wc');
     await App.DB.bulkDelete('attachments', docs.map((d) => d.id));
@@ -534,6 +583,7 @@ App.Store = (function () {
       const id = await createWC({ wcNumber: r.wcNumber, typeId: type.id, date: r.date, party, irrNumber: irr });
       const wc = await App.DB.get('wcs', id);
       wc.statusId = statusId; wc.notes = notes; wc.log = logRecord(r);
+      if (r.kind === 'void') wc.voided = { date: App.UI.today(), reason: 'Voided in the WC log', numberOnly: true };
       if (type.kind === 'transfer') {
         const t = wc.transfer;
         if (r.cbepOnly) t.lines[0].category = 'cbep';
@@ -661,6 +711,18 @@ App.Store = (function () {
     // entries move to it; a starter CBEP material for each 196C category that has none.
     // v13: inventory checks list only their own program's materials (older CBEP checks also kept the CEW ones);
     // anything already weighed stays, so it can be flagged and moved.
+    // v14: shipment lines with CEW? unticked become "— none —" (not counted); Void-type WCs become voided.
+    if (!meta.done.includes('v14-void-and-lines')) {
+      const types = await App.DB.getAll('wcTypes'); const voidIds = new Set(types.filter((t) => /^void$/i.test(String(t.name).trim())).map((t) => t.id));
+      for (const w of await App.DB.getAll('wcs')) {
+        let changed = false;
+        if (w.kind === 'shipment' && w.shipment) (w.shipment.lines || []).forEach((l) => { if (l.cew === false && l.materialId != null) { l.materialId = null; changed = true; } });
+        if (voidIds.has(w.typeId) && !w.voided) { w.voided = { date: (w.createdAt || '').slice(0, 10), reason: 'Void', numberOnly: !w.companyId && !String(w.notes || '').trim() }; changed = true; }
+        if (changed) await App.DB.put('wcs', w);
+      }
+      await mark('v14-void-and-lines');
+    }
+
     if (!meta.done.includes('v13-check-lists') && meta.done.includes('v12-material-programs')) {
       const mats = await App.DB.getAll('materials'); const byId = new Map(mats.map((m) => [m.id, m]));
       for (const w of await App.DB.getAll('wcs')) {
@@ -832,5 +894,5 @@ App.Store = (function () {
     return add.length;
   }
 
-  return { changeWcType, typeChangeBlockers, KIND_NAMES, currentPeriod, inScope, issueGeneration, cbepStored, saveCbepStored, cbepGenDays, saveCbepGenDay, createCbepCheck, cbepDaily, saveCbepDaily, claimPart198, transfer198, shipmentUc, ucRemaining, markSkipped, recordVoidWc, importWcLog, plateChoices, isKnownPlate, learnDescriptions, loadAll, transferParties, partyOptions, partyLabel, createWC, deleteWC, wcNumberTaken, irrNumberTaken, ensurePeriod, findOrCreateCompany, addAliases, mergeCompanies, rewriteUnitCompanies, migrate, blankTransferLine, blankWeighLine };
+  return { trash, toTrash, restoreFromTrash, purgeTrash, voidWc, unvoidWc, markNumberVoided, changeWcType, typeChangeBlockers, KIND_NAMES, currentPeriod, inScope, issueGeneration, cbepStored, saveCbepStored, cbepGenDays, saveCbepGenDay, createCbepCheck, cbepDaily, saveCbepDaily, claimPart198, transfer198, shipmentUc, ucRemaining, markSkipped, recordVoidWc, importWcLog, plateChoices, isKnownPlate, learnDescriptions, loadAll, transferParties, partyOptions, partyLabel, createWC, deleteWC, wcNumberTaken, irrNumberTaken, ensurePeriod, findOrCreateCompany, addAliases, mergeCompanies, rewriteUnitCompanies, migrate, blankTransferLine, blankWeighLine };
 })();

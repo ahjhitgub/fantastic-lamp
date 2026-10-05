@@ -48,6 +48,7 @@ js/vendor/pdfjs/         pdf.js 5.6 legacy build (Apache-2.0) — reads 198 PDFs
 forms/CalRecycle198.pdf  Blank fillable CalRecycle 198 (Rev. 1/2026) — the 198 C, UC and Master are filled on it
 forms/CBEPClaimChecklist.pdf  CalRecycle's CBEP Claim Completeness Checklist (Apr 2026) — filled in from the data
 js/checklistmap.js       Each checklist checkbox field → what it checks (built from the form's own layout)
+js/help.js               The "?" help text for each page
 CHANGELOG.md             What changed in each version
 tests/logic.test.js      node --test tests/logic.test.js
 ```

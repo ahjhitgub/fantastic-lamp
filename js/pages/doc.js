@@ -281,7 +281,7 @@ App.Pages.doc = (function () {
   function invoice(wc, data, P) {
     const { esc, fmt } = U();
     const t = wc.transfer;
-    const inv = L().invoiceMath({ transfer: t, mode: t.mode, priceItems: data.priceItems, company: P.customer });
+    const inv = L().invoiceMath({ date: wc.date, transfer: t, mode: t.mode, priceItems: data.priceItems, company: P.customer });
     const money = (n) => L().money(n);
     const rate = (r) => (r === null || r === undefined ? '<span class="flag-text no-print">rate needed</span>' : money(r));
     const cols = [{ label: 'UNITS', width: 12 }, { label: 'DESCRIPTION', width: 22 }, { label: 'GROSS', width: 11.5 }, { label: 'TARE', width: 11.5 }, { label: 'NET', width: 11.5 }, { label: 'RATE/LBS', width: 13 }, { label: 'CREDIT', width: 18.5 }];
@@ -650,12 +650,22 @@ App.Pages.doc = (function () {
         : '<p>Tables left blank — everything listed above is claimed in one month.</p>'}`;
   }
 
+  /** Any WC's printable sheet (HTML). */
+  function wcSheetHtml(wc, data) {
+    if (wc.kind === 'transfer') return weightCert(wc, data, App.Store.transferParties(wc, data));
+    if (wc.kind === 'shipment') return shipmentWc(wc, data);
+    if (wc.kind === 'generation') return generationWc(wc, data);
+    if (wc.kind === 'inventory') return inventoryWc(wc, data);
+    return genericWc(wc, data);
+  }
+  App.Docs = { buildMergedPdf, htmlToPdfPage, wcSheetHtml };
+
   return {
     async render(container) {
       const { h, esc } = U();
       const [idStr, typeParam] = App.State.routeParams;
       const data = await App.Store.loadAll();
-      const wc = data.wcs.find((w) => w.id === Number(idStr));
+      const wc = data.allWcs.find((w) => w.id === Number(idStr));
       const DOC198 = ['198c', '198uc', '198ucr', '198m'];
       const type = TYPES.some(([k]) => k === typeParam) || DOC198.includes(typeParam) ? typeParam : 'irr';
       // a CRT/plasma shipment's 198 UC: the entries of each source transfer's UC that went out with it (locked once made)
@@ -708,14 +718,14 @@ App.Pages.doc = (function () {
         <div class="doc-toolbar">
           <a href="#/wc/${wc.id}">← WC #${esc(wc.wcNumber)}</a>
           <span class="spacer"></span>
-          ${TYPES.map(([k, label]) => `<a class="button ${k === type ? 'primary' : ''}" href="#/doc/${wc.id}/${k}">${esc(label)}</a>`).join('')}
+          ${TYPES.filter(([k]) => !(wc.transfer && wc.transfer.selfCollected && (k === 'irr' || k === 'invoice'))).map(([k, label]) => `<a class="button ${k === type ? 'primary' : ''}" href="#/doc/${wc.id}/${k}">${esc(label)}</a>`).join('')}
           ${Object.entries(D198.docs).map(([k, d]) => `<a class="button ${k === type ? 'primary' : ''}" href="#/doc/${wc.id}/${k}">${esc(d.label)}</a>`).join('')}
           <button type="button" class="primary" data-a="print">Print</button>
         </div>`);
       bar.querySelector('[data-a="print"]').addEventListener('click', () => { if (!print197()) window.print(); });
       container.append(bar);
 
-      const inv = L().invoiceMath({ transfer: wc.transfer, mode: wc.transfer.mode, priceItems: data.priceItems, company: P.customer });
+      const inv = L().invoiceMath({ date: wc.date, transfer: wc.transfer, mode: wc.transfer.mode, priceItems: data.priceItems, company: P.customer });
       if (type === 'invoice' && inv.missing) container.append(U().notice(`${inv.missing} rate(s) still needed — enter them in the Pricing section of the WC.`, 'warning'));
       if (type === 'invoice' && !wc.transfer.mode) container.append(U().notice('Pick up or drop off isn\u2019t chosen on the WC, so price-list rates can\u2019t be picked.', 'warning'));
 
